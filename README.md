@@ -1,4 +1,5 @@
-可以按照示例工作流来接线，dlss5的dll记得放到runtime里，下面都是ai写的。
+可以按照示例工作流来接线，dlss5的dll记得放到runtime里，记得检查runtimes中有无dll文件，大小158mb，由于codex编写时用的固定路径，如果提示缺少dll，请将文件夹名称改为ComfyUI-DLSSNR-TEST
+下面都是ai写的。
 
 
 ## 节点
