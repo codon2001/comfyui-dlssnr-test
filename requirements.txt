@@ -1,0 +1,7 @@
+# ComfyUI normally provides these already.
+numpy
+Pillow
+# Optional; only needed by the included Farneback motion node.
+opencv-python
+# Optional fallback for locating ffmpeg when it is not on PATH.
+imageio-ffmpeg
