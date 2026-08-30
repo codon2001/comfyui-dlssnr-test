@@ -7,7 +7,9 @@ import glob
 import hashlib
 import io
 import os
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -25,8 +27,15 @@ except Exception:  # Allows isolated import checks outside ComfyUI.
 
 
 ROOT = Path(__file__).resolve().parent
-BRIDGE_PATH = ROOT / "native" / "dlssnr_bridge.dll"
 RUNTIME_DIR = ROOT / "runtimes"
+CACHE_DIR = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / \
+    "ComfyUI-DLSSNR-TEST2"
+BRIDGE_DLL = ROOT / "native" / "dlssnr_bridge.dll"
+BRIDGE_PORTABLE = ROOT / "native" / "dlssnr_bridge.bin"
+BUNDLED_RUNTIME = RUNTIME_DIR / "default" / "dlssnr.dll"
+BUNDLED_RUNTIME_PARTS = RUNTIME_DIR / "default" / "parts"
+BRIDGE_SHA256 = "EAD1C0286BBC0EEFC53FAD2FBC6CBE5884CC61A78E9EC1C1A1C1C43AE036BEB2"
+BUNDLED_RUNTIME_SHA256 = "984BEE0F775C277D5829B8FD6775D53A7B0F75396C852B3AAF06A18375F81014"
 DEFAULT_RUNTIME = ""
 _stop_events: dict[str, threading.Event] = {}
 _stop_lock = threading.Lock()
@@ -40,6 +49,93 @@ _HOT_SETTING_NAMES = {
     "depth_inference_interval", "preview_fps", "safety_timeout_seconds",
     "scene_paper_white_scale",
 }
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest().upper()
+
+
+def _is_real_pe(path: Path, minimum_size: int = 4096) -> bool:
+    try:
+        if not path.is_file() or path.stat().st_size < minimum_size:
+            return False
+        with path.open("rb") as source:
+            return source.read(2) == b"MZ"
+    except OSError:
+        return False
+
+
+def _verified(path: Path, expected_sha256: str, minimum_size: int = 4096) -> bool:
+    return _is_real_pe(path, minimum_size) and _sha256(path) == expected_sha256
+
+
+def _atomic_copy(source: Path, destination: Path, expected_sha256: str) -> Path:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(destination.suffix + f".{os.getpid()}.tmp")
+    try:
+        shutil.copyfile(source, temporary)
+        if not _verified(temporary, expected_sha256):
+            raise RuntimeError(f"便携二进制校验失败：{source.name}")
+        os.replace(temporary, destination)
+        return destination
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _assemble_parts(parts: list[Path], destination: Path, expected_sha256: str) -> Path:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(destination.suffix + f".{os.getpid()}.tmp")
+    try:
+        with temporary.open("wb") as output:
+            for part in parts:
+                with part.open("rb") as source:
+                    shutil.copyfileobj(source, output, 8 * 1024 * 1024)
+        if not _verified(temporary, expected_sha256, 100 * 1024 * 1024):
+            raise RuntimeError("内置 DLSSNR DLL 分片不完整或校验失败，请重新解压节点包。")
+        os.replace(temporary, destination)
+        return destination
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _bridge_path() -> Path:
+    if _verified(BRIDGE_DLL, BRIDGE_SHA256):
+        return BRIDGE_DLL
+    if not _verified(BRIDGE_PORTABLE, BRIDGE_SHA256):
+        hint = "检测到 Git LFS 指针文件" if BRIDGE_DLL.is_file() else "文件不存在"
+        raise RuntimeError(
+            f"原生桥接不可用（{hint}）。请使用完整的 TEST2 压缩包重新安装。")
+    for destination in (BRIDGE_DLL, CACHE_DIR / "native" / "dlssnr_bridge.dll"):
+        try:
+            return _atomic_copy(BRIDGE_PORTABLE, destination, BRIDGE_SHA256)
+        except OSError:
+            continue
+    raise RuntimeError("无法释放原生桥接 DLL；请检查节点目录或 LOCALAPPDATA 的写入权限。")
+
+
+def _bundled_runtime_path() -> Path | None:
+    if _verified(BUNDLED_RUNTIME, BUNDLED_RUNTIME_SHA256, 100 * 1024 * 1024):
+        return BUNDLED_RUNTIME
+    parts = sorted(BUNDLED_RUNTIME_PARTS.glob("dlssnr.part*"))
+    if not parts:
+        return None
+    for destination in (BUNDLED_RUNTIME,
+                        CACHE_DIR / "runtimes" / "default" / "dlssnr.dll"):
+        try:
+            return _assemble_parts(parts, destination, BUNDLED_RUNTIME_SHA256)
+        except OSError:
+            continue
+    raise RuntimeError("无法重组内置 DLSSNR DLL；请检查磁盘空间和写入权限。")
 
 
 def _set_live_settings(node_id: str, values: dict) -> int:
@@ -66,11 +162,15 @@ def _clear_live_settings(node_id: str) -> None:
 
 def runtime_input():
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    bundled = _bundled_runtime_path()
     choices = sorted(
         path.relative_to(RUNTIME_DIR).as_posix()
         for path in RUNTIME_DIR.rglob("*.dll")
-        if path.is_file()
+        if _is_real_pe(path) and path.name.lower() != "nvngx.dll"
     )
+    if bundled is not None and bundled.is_relative_to(CACHE_DIR):
+        choices.append("default/dlssnr.dll")
+        choices = sorted(set(choices))
     if not choices:
         choices = ["请把 nvngx_dlssnr.dll 放入 runtimes 文件夹"]
     return (choices,)
@@ -93,12 +193,34 @@ def gpu_index(selection) -> int:
 
 def _runtime_path(selection: str) -> Path:
     value = Path(str(selection).strip().strip('"'))
-    # Keep old saved workflows readable, while new nodes only expose the list.
-    runtime = value if value.is_absolute() else RUNTIME_DIR / value
+    bundled = _bundled_runtime_path()
+    # Early versions serialized a machine-specific absolute path. Migrate that
+    # value to this package instead of trying another computer's drive letter.
+    if value.is_absolute():
+        preferred = RUNTIME_DIR / value.parent.name / value.name
+        candidates = sorted(
+            path for path in RUNTIME_DIR.rglob(value.name)
+            if _is_real_pe(path)
+        )
+        if _is_real_pe(preferred):
+            runtime = preferred
+        elif len(candidates) == 1:
+            runtime = candidates[0]
+        elif bundled is not None and value.name.lower() in {
+                "dlssnr.dll", "nvngx_dlssnr.dll"}:
+            runtime = bundled
+        else:
+            runtime = preferred
+    elif value.as_posix().lower() == "default/dlssnr.dll" and bundled is not None:
+        runtime = bundled
+    else:
+        runtime = RUNTIME_DIR / value
     runtime = runtime.resolve()
-    if not runtime.is_file() or runtime.suffix.lower() != ".dll":
+    if not _is_real_pe(runtime) or runtime.suffix.lower() != ".dll":
+        lfs_hint = "；检测到的文件可能只是 Git LFS 指针" if runtime.is_file() else ""
         raise RuntimeError(
-            f"DLSSNR DLL 不存在：{runtime}。请放入节点包 runtimes 文件夹后重启 ComfyUI。")
+            f"DLSSNR DLL 不存在或不是有效的 Windows DLL：{runtime}{lfs_hint}。"
+            "请使用完整的 TEST2 压缩包，或把真实 DLL 放入 runtimes 文件夹后重启 ComfyUI。")
     return runtime
 
 
@@ -230,13 +352,18 @@ class Bridge:
     def __init__(self, runtime_path: str, width: int, height: int, gpu: int = 0):
         if os.name != "nt":
             raise RuntimeError("DLSSNR Live 目前仅支持 Windows x64。")
-        if not BRIDGE_PATH.is_file():
-            raise RuntimeError(f"缺少桥接文件：{BRIDGE_PATH}")
+        bridge_path = _bridge_path()
         runtime = _runtime_path(runtime_path)
         core = self._find_core()
         self.runtime = runtime
         self.runtime_hash = hashlib.sha256(runtime.read_bytes()).hexdigest().upper()
-        self.lib = ctypes.CDLL(str(BRIDGE_PATH))
+        try:
+            self.lib = ctypes.CDLL(str(bridge_path))
+        except OSError as exc:
+            raise RuntimeError(
+                f"Windows 无法加载原生桥接：{bridge_path}。"
+                f"系统错误：{exc}。请确认使用 Windows x64、已更新显卡驱动，"
+                "并检查安全软件是否隔离了 DLL。") from exc
         self.lib.dlssnr_create.argtypes = [
             ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
             ctypes.c_int,
@@ -262,14 +389,37 @@ class Bridge:
     @staticmethod
     def _find_core() -> Path:
         root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
-        pattern = str(root / "System32" / "DriverStore" / "FileRepository" /
-                      "nv_dispi.inf_amd64_*" / "nvngx.dll")
-        matches = [Path(p) for p in glob.glob(pattern)]
+        packaged_core = RUNTIME_DIR / "core" / "nvngx.dll"
+        if _is_real_pe(packaged_core):
+            return packaged_core
+        repository = root / "System32" / "DriverStore" / "FileRepository"
+        matches = []
+        # NVIDIA uses different INF directory prefixes between notebook,
+        # desktop, DCH and OEM drivers; do not hard-code nv_dispi only.
+        for pattern in ("nv*.inf_amd64_*/nvngx.dll",
+                        "nv*.inf_amd64_*/*/nvngx.dll"):
+            matches.extend(path for path in repository.glob(pattern)
+                           if _is_real_pe(path))
+        # OEM notebook packages may add more directory layers. This fallback
+        # is slower, but runs only when the fast patterns found nothing.
+        if not matches and repository.is_dir():
+            matches.extend(path for path in repository.rglob("nvngx.dll")
+                           if _is_real_pe(path))
         if not matches:
-            fallback = root / "System32" / "nvngx.dll"
-            if fallback.is_file():
-                return fallback
-            raise RuntimeError("未找到 NVIDIA NGX 核心 nvngx.dll，请更新 NVIDIA 驱动。")
+            fallbacks = [
+                root / "System32" / "nvngx.dll",
+                Path(os.environ.get("ProgramFiles", r"C:\Program Files")) /
+                    "NVIDIA Corporation" / "NGX" / "nvngx.dll",
+            ]
+            for fallback in fallbacks:
+                if _is_real_pe(fallback):
+                    return fallback
+            raise RuntimeError(
+                "未找到 NVIDIA NGX 核心 nvngx.dll。TEST2 已检查桌面、笔记本、"
+                "OEM/DCH DriverStore 目录及系统目录；该电脑的 NVIDIA 驱动包确实没有"
+                "安装 NGX Core。请在 NVIDIA 官网对当前笔记本型号执行驱动的“自定义安装 → "
+                "执行清洁安装”，然后重启电脑。也可以把从该电脑 NVIDIA 驱动中取得的"
+                "真实 nvngx.dll 放到本节点的 runtimes/core/nvngx.dll。")
         return max(matches, key=lambda p: p.stat().st_mtime)
 
     def process(self, rgba: np.ndarray, settings: Settings,
