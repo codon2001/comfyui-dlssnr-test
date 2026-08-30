@@ -58,7 +58,6 @@ DLSSNR 加载 GIF → DLSSNR GIF 处理 → DLSSNR 保存 GIF
 
 - 估算的 `depth` 和 `motion_vectors` 会真实传入 DLL。
 - `reactive_mask` 与 `exposure_ratio` 当前作为诊断输出。
-- 相机矩阵与 jitter 无法从普通 RGB 可靠恢复，因此不提供无效控件。
 - 快速遮挡、透明物体、镜面、高曝光变化仍可能拖影或不稳定，不能等同于游戏原生引导数据。
 
 ## 安装
