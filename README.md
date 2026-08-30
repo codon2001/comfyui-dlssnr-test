@@ -65,10 +65,3 @@ DLSSNR 加载 GIF → DLSSNR GIF 处理 → DLSSNR 保存 GIF
 
 把整个文件夹放到 `ComfyUI/custom_nodes/`，安装 `requirements.txt` 后重启 ComfyUI。把其他兼容 DLL 放入包内 `runtimes` 或其子目录；重启后会自动出现在 `dll_path` 下拉列表。
 
-### TEST2 的 DLL 兼容修复
-
-- ZIP 发布包直接包含完整的 `runtimes/default/dlssnr.dll` 和 `native/dlssnr_bridge.dll`。代码仍兼容可选分片安装，但普通用户不需要手动合并文件。
-- 旧工作流保存的其他电脑绝对路径会自动映射到当前节点包的 `runtimes`，不会继续访问原盘符。
-- NVIDIA NGX Core 会搜索桌面、笔记本、OEM 和 DCH 驱动使用的不同 DriverStore 目录；完整递归搜索后仍不存在时，才提示重新完整安装 NVIDIA 驱动。
-- 特殊 OEM 驱动仍无法定位时，可将从该电脑 NVIDIA 驱动中取得的真实 `nvngx.dll` 放到 `runtimes/core/nvngx.dll`；它不会出现在效果 DLL 下拉框中。
-- 节点目录不可写时，内置二进制会释放到 `%LOCALAPPDATA%/ComfyUI-DLSSNR-TEST2`，兼容应用版 ComfyUI 的目录权限。
