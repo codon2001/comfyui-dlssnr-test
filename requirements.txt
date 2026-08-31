@@ -1,7 +1,8 @@
 # ComfyUI normally provides these already.
 numpy
 Pillow
-# Optional; only needed by the included Farneback motion node.
+# Used for video metadata and the CPU compatibility decoder.
 opencv-python
-# Optional fallback for locating ffmpeg when it is not on PATH.
+# Used to locate ffmpeg when it is not already on PATH.
 imageio-ffmpeg
+# DirectML ONNX Runtime is bundled as official wheels for Python 3.10-3.13.

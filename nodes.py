@@ -29,18 +29,21 @@ except Exception:  # Allows isolated import checks outside ComfyUI.
 ROOT = Path(__file__).resolve().parent
 RUNTIME_DIR = ROOT / "runtimes"
 CACHE_DIR = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / \
-    "ComfyUI-DLSSNR-TEST2"
+    "ComfyUI-DLSSNR-TEST3"
 BRIDGE_DLL = ROOT / "native" / "dlssnr_bridge.dll"
 BRIDGE_PORTABLE = ROOT / "native" / "dlssnr_bridge.bin"
 BUNDLED_RUNTIME = RUNTIME_DIR / "default" / "dlssnr.dll"
 BUNDLED_RUNTIME_PARTS = RUNTIME_DIR / "default" / "parts"
-BRIDGE_SHA256 = "EAD1C0286BBC0EEFC53FAD2FBC6CBE5884CC61A78E9EC1C1A1C1C43AE036BEB2"
+BRIDGE_SHA256 = "8AA1C0ABC17A0EE0C32ECB602F8E7B749930A7B53FA17ECAD64106CFC4C9E24C"
 BUNDLED_RUNTIME_SHA256 = "984BEE0F775C277D5829B8FD6775D53A7B0F75396C852B3AAF06A18375F81014"
 DEFAULT_RUNTIME = ""
 _stop_events: dict[str, threading.Event] = {}
 _stop_lock = threading.Lock()
 _live_settings: dict[str, dict] = {}
 _live_settings_lock = threading.Lock()
+_preview_condition = threading.Condition()
+_preview_pending: dict[str, tuple] = {}
+_preview_thread: threading.Thread | None = None
 
 _HOT_SETTING_NAMES = {
     "automatic_mask", "nr_style", "nr_intensity", "local_tone_strength",
@@ -48,6 +51,7 @@ _HOT_SETTING_NAMES = {
     "frame_guidance", "depth_convention", "motion_scale_x", "motion_scale_y",
     "depth_inference_interval", "preview_fps", "safety_timeout_seconds",
     "scene_paper_white_scale",
+    "depth_assist_strength",
 }
 
 
@@ -114,7 +118,7 @@ def _bridge_path() -> Path:
     if not _verified(BRIDGE_PORTABLE, BRIDGE_SHA256):
         hint = "检测到 Git LFS 指针文件" if BRIDGE_DLL.is_file() else "文件不存在"
         raise RuntimeError(
-            f"原生桥接不可用（{hint}）。请使用完整的 TEST2 压缩包重新安装。")
+            f"原生桥接不可用（{hint}）。请使用完整的 TEST3 压缩包重新安装。")
     for destination in (BRIDGE_DLL, CACHE_DIR / "native" / "dlssnr_bridge.dll"):
         try:
             return _atomic_copy(BRIDGE_PORTABLE, destination, BRIDGE_SHA256)
@@ -220,7 +224,7 @@ def _runtime_path(selection: str) -> Path:
         lfs_hint = "；检测到的文件可能只是 Git LFS 指针" if runtime.is_file() else ""
         raise RuntimeError(
             f"DLSSNR DLL 不存在或不是有效的 Windows DLL：{runtime}{lfs_hint}。"
-            "请使用完整的 TEST2 压缩包，或把真实 DLL 放入 runtimes 文件夹后重启 ComfyUI。")
+            "请使用完整的 TEST3 压缩包，或把真实 DLL 放入 runtimes 文件夹后重启 ComfyUI。")
     return runtime
 
 
@@ -267,7 +271,8 @@ def _select_media_path(kind: str) -> str:
     return result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
 
 
-if PromptServer is not None and web is not None:
+if (PromptServer is not None and web is not None and
+        getattr(PromptServer, "instance", None) is not None):
     @PromptServer.instance.routes.post("/dlssnr_live/stop")
     async def dlssnr_live_stop(request):
         data = await request.json()
@@ -304,6 +309,7 @@ if PromptServer is not None and web is not None:
         allowed = {
             "gif": {".gif"},
             "video": {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".wmv"},
+            "media": {".gif", ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".wmv"},
         }.get(kind, set())
         reader = await request.multipart()
         field = await reader.next()
@@ -345,11 +351,23 @@ class Settings(ctypes.Structure):
         ("motion_scale_x", ctypes.c_float),
         ("motion_scale_y", ctypes.c_float),
         ("paper_white_scale", ctypes.c_float),
+        ("color_transfer", ctypes.c_int),
     ]
 
 
 class Bridge:
-    def __init__(self, runtime_path: str, width: int, height: int, gpu: int = 0):
+    # NGX feature creation is much more expensive than one evaluation.  Keep
+    # the most recently used compatible session alive across ComfyUI runs, as
+    # a real-time renderer does.  The native DLL supports one active session,
+    # so a size/runtime/device change atomically replaces the idle cache.
+    _cache_lock = threading.RLock()
+    _cache_key = None
+    _cache_handle = None
+    _cache_lib = None
+    _cache_refs = 0
+
+    def __init__(self, runtime_path: str, width: int, height: int, gpu: int = 0,
+                 preset: int = 0):
         if os.name != "nt":
             raise RuntimeError("DLSSNR Live 目前仅支持 Windows x64。")
         bridge_path = _bridge_path()
@@ -357,34 +375,51 @@ class Bridge:
         core = self._find_core()
         self.runtime = runtime
         self.runtime_hash = hashlib.sha256(runtime.read_bytes()).hexdigest().upper()
-        try:
-            self.lib = ctypes.CDLL(str(bridge_path))
-        except OSError as exc:
-            raise RuntimeError(
-                f"Windows 无法加载原生桥接：{bridge_path}。"
-                f"系统错误：{exc}。请确认使用 Windows x64、已更新显卡驱动，"
-                "并检查安全软件是否隔离了 DLL。") from exc
-        self.lib.dlssnr_create.argtypes = [
-            ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
-            ctypes.c_int,
-            ctypes.c_char_p, ctypes.c_int,
-        ]
-        self.lib.dlssnr_create.restype = ctypes.c_void_p
-        self.lib.dlssnr_process.argtypes = [
-            ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint32,
-            ctypes.POINTER(ctypes.c_float), ctypes.c_uint32,
-            ctypes.POINTER(ctypes.c_uint16), ctypes.c_uint32,
-            ctypes.POINTER(Settings), ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint32,
-            ctypes.c_char_p, ctypes.c_int,
-        ]
-        self.lib.dlssnr_process.restype = ctypes.c_int
-        self.lib.dlssnr_destroy.argtypes = [ctypes.c_void_p]
-        error = ctypes.create_string_buffer(2048)
-        self.handle = self.lib.dlssnr_create(
-            str(runtime), str(core), width, height, int(gpu), error, len(error)
-        )
-        if not self.handle:
-            raise RuntimeError(error.value.decode("utf-8", "replace"))
+        key = (str(bridge_path.resolve()), str(runtime.resolve()), str(core.resolve()),
+               int(width), int(height), int(gpu), max(0, min(3, int(preset))))
+        with Bridge._cache_lock:
+            if Bridge._cache_key != key:
+                if Bridge._cache_refs:
+                    raise RuntimeError("DLSSNR 正在处理另一种尺寸，暂时不能切换 GPU 会话。")
+                if Bridge._cache_handle and Bridge._cache_lib:
+                    Bridge._cache_lib.dlssnr_destroy(Bridge._cache_handle)
+                Bridge._cache_key = None
+                Bridge._cache_handle = None
+                Bridge._cache_lib = None
+                try:
+                    lib = ctypes.CDLL(str(bridge_path))
+                except OSError as exc:
+                    raise RuntimeError(
+                        f"Windows 无法加载原生桥接：{bridge_path}。"
+                        f"系统错误：{exc}。请确认使用 Windows x64、已更新显卡驱动，"
+                        "并检查安全软件是否隔离了 DLL。") from exc
+                lib.dlssnr_create.argtypes = [
+                    ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                    ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_int,
+                ]
+                lib.dlssnr_create.restype = ctypes.c_void_p
+                lib.dlssnr_process.argtypes = [
+                    ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint32,
+                    ctypes.POINTER(ctypes.c_float), ctypes.c_uint32,
+                    ctypes.POINTER(ctypes.c_uint16), ctypes.c_uint32,
+                    ctypes.POINTER(Settings), ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint32,
+                    ctypes.c_char_p, ctypes.c_int,
+                ]
+                lib.dlssnr_process.restype = ctypes.c_int
+                lib.dlssnr_destroy.argtypes = [ctypes.c_void_p]
+                error = ctypes.create_string_buffer(2048)
+                handle = lib.dlssnr_create(
+                    str(runtime), str(core), width, height, int(gpu), key[-1],
+                    error, len(error))
+                if not handle:
+                    raise RuntimeError(error.value.decode("utf-8", "replace"))
+                Bridge._cache_key = key
+                Bridge._cache_handle = handle
+                Bridge._cache_lib = lib
+            Bridge._cache_refs += 1
+            self.lib = Bridge._cache_lib
+            self.handle = Bridge._cache_handle
+            self._cache_owned = True
 
     @staticmethod
     def _find_core() -> Path:
@@ -415,7 +450,7 @@ class Bridge:
                 if _is_real_pe(fallback):
                     return fallback
             raise RuntimeError(
-                "未找到 NVIDIA NGX 核心 nvngx.dll。TEST2 已检查桌面、笔记本、"
+                "未找到 NVIDIA NGX 核心 nvngx.dll。TEST3 已检查桌面、笔记本、"
                 "OEM/DCH DriverStore 目录及系统目录；该电脑的 NVIDIA 驱动包确实没有"
                 "安装 NGX Core。请在 NVIDIA 官网对当前笔记本型号执行驱动的“自定义安装 → "
                 "执行清洁安装”，然后重启电脑。也可以把从该电脑 NVIDIA 驱动中取得的"
@@ -453,15 +488,136 @@ class Bridge:
         return output
 
     def close(self):
-        if getattr(self, "handle", None):
-            self.lib.dlssnr_destroy(self.handle)
+        if getattr(self, "_cache_owned", False):
+            with Bridge._cache_lock:
+                Bridge._cache_refs = max(0, Bridge._cache_refs - 1)
+            self._cache_owned = False
             self.handle = None
+
+    @classmethod
+    def clear_cache(cls):
+        with cls._cache_lock:
+            if cls._cache_refs:
+                return False
+            if cls._cache_handle and cls._cache_lib:
+                cls._cache_lib.dlssnr_destroy(cls._cache_handle)
+            cls._cache_key = None
+            cls._cache_handle = None
+            cls._cache_lib = None
+            return True
 
     def __enter__(self):
         return self
 
     def __exit__(self, *_):
         self.close()
+
+
+_NATIVE_COLOR_RESTORE = None
+_NATIVE_COLOR_RESTORE_LOCK = threading.Lock()
+
+
+def _restore_source_color(source_rgba: np.ndarray,
+                          processed_rgba: np.ndarray,
+                          strength: float = 1.0) -> np.ndarray:
+    """Remove the global grey cast while retaining DLSSNR's local changes."""
+    amount = float(np.clip(strength, 0.0, 1.0))
+    if amount <= 0.0:
+        return processed_rgba
+    # V1.4 performs the same statistics/color restoration in native OpenMP
+    # code.  This keeps image and GIF post-processing from becoming slower
+    # than the DLSSNR GPU evaluation itself.  Retain the NumPy path below for
+    # source-only development environments using an older bridge.
+    global _NATIVE_COLOR_RESTORE
+    try:
+        with _NATIVE_COLOR_RESTORE_LOCK:
+            if _NATIVE_COLOR_RESTORE is None:
+                library = Bridge._cache_lib or ctypes.CDLL(str(_bridge_path()))
+                function = library.dlssnr_restore_color
+                function.argtypes = [
+                    ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint32,
+                    ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint32,
+                    ctypes.c_uint32, ctypes.c_uint32, ctypes.c_float,
+                ]
+                function.restype = None
+                _NATIVE_COLOR_RESTORE = (library, function)
+        source_native = np.ascontiguousarray(source_rgba, dtype=np.uint8)
+        output_native = np.ascontiguousarray(processed_rgba, dtype=np.uint8).copy()
+        height, width = output_native.shape[:2]
+        _NATIVE_COLOR_RESTORE[1](
+            source_native.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
+            source_native.strides[0],
+            output_native.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
+            output_native.strides[0], width, height, amount)
+        return output_native
+    except (AttributeError, OSError):
+        pass
+    source = source_rgba[..., :3].astype(np.float32) / 255.0
+    result = processed_rgba[..., :3].astype(np.float32) / 255.0
+    coefficients = np.array((0.2126, 0.7152, 0.0722), dtype=np.float32)
+    source_luma = source @ coefficients
+    result_luma = result @ coefficients
+    source_low, source_high = np.quantile(source_luma, (0.01, 0.99))
+    result_low, result_high = np.quantile(result_luma, (0.01, 0.99))
+    luma_gain = float(np.clip(
+        (source_high - source_low) / max(result_high - result_low, 1e-5),
+        0.5, 2.0))
+    source_mid = float(np.median(source_luma))
+    result_mid = float(np.median(result_luma))
+    restored_luma = (result_luma - result_mid) * luma_gain + source_mid
+
+    source_chroma = source - source_luma[..., None]
+    result_chroma = result - result_luma[..., None]
+    source_chroma_mean = source_chroma.mean(axis=(0, 1), keepdims=True)
+    result_chroma_mean = result_chroma.mean(axis=(0, 1), keepdims=True)
+    source_energy = float(np.sqrt(np.mean(
+        np.square(source_chroma - source_chroma_mean))))
+    result_energy = float(np.sqrt(np.mean(
+        np.square(result_chroma - result_chroma_mean))))
+    chroma_gain = float(np.clip(source_energy / max(result_energy, 1e-5), 0.5, 2.0))
+    restored_chroma = ((result_chroma - result_chroma_mean) * chroma_gain +
+                       source_chroma_mean)
+    restored = restored_luma[..., None] + restored_chroma
+    blended = result + (restored - result) * amount
+    output = processed_rgba.copy()
+    output[..., :3] = np.ascontiguousarray(
+        np.clip(blended, 0.0, 1.0) * 255.0 + 0.5, dtype=np.uint8)
+    return output
+
+
+def _apply_depth_assist(source_rgba: np.ndarray, processed_rgba: np.ndarray,
+                        depth: np.ndarray | None, strength: float) -> np.ndarray:
+    """Use depth in host-side compositing when the experimental DLL ignores it."""
+    amount = max(0.0, float(strength))
+    if depth is None or amount <= 0.0:
+        return processed_rgba
+    values = np.nan_to_num(np.asarray(depth, dtype=np.float32), copy=False)
+    low, high = np.quantile(values, (0.02, 0.98))
+    normalised = np.clip((values - low) / max(float(high - low), 1e-6), 0.0, 1.0)
+    gradient_y, gradient_x = np.gradient(normalised)
+    edge = np.hypot(gradient_x, gradient_y)
+    edge_scale = max(float(np.quantile(edge, 0.98)), 1e-6)
+    edge = np.clip(edge / edge_scale, 0.0, 1.0)
+    # Keep the average DLSSNR strength close to one.  Depth changes where its
+    # local detail is applied; discontinuities receive a small extra emphasis.
+    weight = 1.0 + (normalised - 0.5) * (0.60 * amount) + edge * (0.20 * amount)
+    weight = np.clip(weight, 0.15, 2.0)[..., None]
+    source = source_rgba[..., :3].astype(np.float32)
+    processed = processed_rgba[..., :3].astype(np.float32)
+    assisted = source + (processed - source) * weight
+    output = processed_rgba.copy()
+    output[..., :3] = np.ascontiguousarray(
+        np.clip(assisted, 0.0, 255.0) + 0.5, dtype=np.uint8)
+    return output
+
+
+def _process_dlssnr(bridge: Bridge, rgba: np.ndarray, settings: Settings,
+                     depth=None, motion=None,
+                     depth_assist_strength: float = 0.0) -> np.ndarray:
+    processed = bridge.process(rgba, settings, depth, motion)
+    processed = _apply_depth_assist(
+        rgba, processed, depth, depth_assist_strength)
+    return _restore_source_color(rgba, processed)
 
 
 def _rgba8(frame: torch.Tensor) -> np.ndarray:
@@ -504,22 +660,52 @@ def _comparison_rgba(original: np.ndarray, processed: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(np.concatenate((original, divider, processed), axis=1))
 
 
+def _preview_worker() -> None:
+    """Encode only the newest preview per node without blocking DLSSNR."""
+    while True:
+        with _preview_condition:
+            while not _preview_pending:
+                _preview_condition.wait()
+            node_id, payload = next(iter(_preview_pending.items()))
+            _preview_pending.pop(node_id, None)
+        rgba, iteration, fps, runtime_hash, state = payload
+        server = None if PromptServer is None else getattr(PromptServer, "instance", None)
+        if server is None:
+            continue
+        try:
+            image = Image.fromarray(rgba[..., :3], "RGB")
+            image.thumbnail((1920, 1080), Image.Resampling.LANCZOS)
+            buffer = io.BytesIO()
+            image.save(buffer, "JPEG", quality=90, optimize=False)
+            server.send_sync("dlssnr_live_preview", {
+                "node_id": node_id,
+                "image": base64.b64encode(buffer.getvalue()).decode("ascii"),
+                "iteration": iteration,
+                "fps": round(fps, 2),
+                "dll_sha256": runtime_hash,
+                "state": state,
+            })
+        except Exception:
+            # A preview must never stop the actual image/video processing.
+            continue
+
+
 def _preview(node_id: str, rgba: np.ndarray, iteration: int, fps: float,
              runtime_hash: str, state: str = "running") -> None:
-    if PromptServer is None:
+    global _preview_thread
+    server = None if PromptServer is None else getattr(PromptServer, "instance", None)
+    if server is None:
         return
-    image = Image.fromarray(rgba[..., :3], "RGB")
-    image.thumbnail((960, 960), Image.Resampling.LANCZOS)
-    buffer = io.BytesIO()
-    image.save(buffer, "JPEG", quality=86, optimize=False)
-    PromptServer.instance.send_sync("dlssnr_live_preview", {
-        "node_id": node_id,
-        "image": base64.b64encode(buffer.getvalue()).decode("ascii"),
-        "iteration": iteration,
-        "fps": round(fps, 2),
-        "dll_sha256": runtime_hash,
-        "state": state,
-    })
+    # Each loop creates a fresh comparison array, so retaining its reference is
+    # safe. Replacing the dictionary entry drops stale previews automatically.
+    with _preview_condition:
+        _preview_pending[node_id] = (
+            rgba, int(iteration), float(fps), str(runtime_hash), str(state))
+        if _preview_thread is None or not _preview_thread.is_alive():
+            _preview_thread = threading.Thread(
+                target=_preview_worker, name="DLSSNRPreview", daemon=True)
+            _preview_thread.start()
+        _preview_condition.notify()
 
 
 class DLSSNRLive:
@@ -531,6 +717,7 @@ class DLSSNRLive:
                 "run_mode": (["实时静态图（手动停止）", "视频/批量逐帧"],),
                 "dll_path": runtime_input(),
                 "gpu_device": gpu_input(),
+                "nr_preset": (["0 Default", "1 Preset #1", "2 Preset #2", "3 Preset #3"],),
                 "automatic_mask": ("BOOLEAN", {"default": False}),
                 "nr_style": (["0 默认（Default）", "1 自然（Natural）", "2 电影感（Cinematic）"],),
                 "nr_intensity": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 2.0, "step": 0.05, "display": "slider"}),
@@ -546,6 +733,7 @@ class DLSSNRLive:
                 "preview_fps": ("INT", {"default": 12, "min": 1, "max": 30, "step": 1, "display": "slider"}),
                 "safety_timeout_seconds": ("INT", {"default": 300, "min": 0, "max": 86400, "step": 1, "display": "slider"}),
                 "scene_paper_white_scale": ("FLOAT", {"default": 1.0, "min": 0.25, "max": 4.0, "step": 0.05, "display": "slider", "tooltip": "等效场景纸白亮度；1.0保持原图，高于1提亮并保护高光。"}),
+                "depth_assist_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05, "display": "slider", "tooltip": "当前实验 DLL 可能忽略原生深度；此项在节点侧用深度调制局部增强，0 表示关闭。"}),
             },
             "optional": {
                 "depth": ("IMAGE",),
@@ -564,12 +752,14 @@ class DLSSNRLive:
     def IS_CHANGED(cls, **_):
         return float("nan")
 
-    def run(self, image, run_mode, dll_path, gpu_device, automatic_mask, nr_style,
+    def run(self, image, run_mode, dll_path, gpu_device, nr_preset,
+            automatic_mask, nr_style,
             nr_intensity, local_tone_strength, local_structure_strength,
             skin_structure_strength, scene_paper_white_scale, ui_correction, frame_guidance,
             depth_convention, motion_scale_x, motion_scale_y,
             depth_inference_interval, preview_fps,
-            safety_timeout_seconds, unique_id, depth=None, motion_vectors=None):
+            safety_timeout_seconds, depth_assist_strength,
+            unique_id, depth=None, motion_vectors=None):
         node_id = str(unique_id)
         _clear_live_settings(node_id)
         event = _event_for(node_id)
@@ -591,11 +781,13 @@ class DLSSNRLive:
         last_comparison = _comparison_rgba(last_input_rgba, last_rgba)
         applied_revision = 0
         try:
-            with Bridge(dll_path, width, height, gpu_index(gpu_device)) as bridge:
+            with Bridge(dll_path, width, height, gpu_index(gpu_device),
+                        int(str(nr_preset).split()[0])) as bridge:
                 is_live = run_mode.startswith("实时") and batch == 1
                 while True:
                     revision, hot = _get_live_settings(node_id)
-                    if revision != applied_revision:
+                    settings_changed = revision != applied_revision
+                    if settings_changed:
                         settings.style = int(str(hot.get("nr_style", settings.style)).split()[0])
                         settings.intensity = float(hot.get("nr_intensity", settings.intensity))
                         settings.local_tone = float(hot.get("local_tone_strength", settings.local_tone))
@@ -619,6 +811,8 @@ class DLSSNRLive:
                         preview_fps = max(1, int(hot.get("preview_fps", preview_fps)))
                         safety_timeout_seconds = max(0, int(hot.get(
                             "safety_timeout_seconds", safety_timeout_seconds)))
+                        depth_assist_strength = float(hot.get(
+                            "depth_assist_strength", depth_assist_strength))
                         applied_revision = revision
                     index = 0 if is_live else iteration
                     if not is_live and index >= batch:
@@ -631,17 +825,32 @@ class DLSSNRLive:
                                             height, width) if use_depth else None
                     motion_np = _motion_frame(motion_vectors, index, height, width) \
                         if use_motion else None
-                    settings.reset = 1 if iteration == 0 else 0
-                    last_rgba = bridge.process(rgba, settings, depth_np, motion_np)
-                    last_comparison = _comparison_rgba(rgba, last_rgba)
+                    # Reset temporal history when hot parameters change so the
+                    # first visible result represents the new values directly.
+                    settings.reset = 1 if iteration == 0 or settings_changed else 0
+                    raw_processed = bridge.process(
+                        rgba, settings, depth_np, motion_np)
                     iteration += 1
+                    # A slider may move while the GPU is evaluating. Do not
+                    # spend more time post-processing or display that stale
+                    # result; immediately start another evaluation instead.
+                    latest_revision, _ = _get_live_settings(node_id)
+                    if is_live and latest_revision != applied_revision:
+                        continue
+                    last_rgba = _apply_depth_assist(
+                        rgba, raw_processed, depth_np, depth_assist_strength)
+                    last_rgba = _restore_source_color(rgba, last_rgba)
+                    latest_revision, _ = _get_live_settings(node_id)
+                    if is_live and latest_revision != applied_revision:
+                        continue
+                    last_comparison = _comparison_rgba(rgba, last_rgba)
                     if not is_live:
                         processed_results.append(
                             torch.from_numpy(last_rgba[..., :3].copy()).float() / 255.0)
                         comparison_results.append(
                             torch.from_numpy(last_comparison[..., :3].copy()).float() / 255.0)
                     now = time.perf_counter()
-                    if now - last_preview >= 1.0 / preview_fps:
+                    if settings_changed or now - last_preview >= 1.0 / preview_fps:
                         _preview(node_id, last_comparison, iteration,
                                  iteration / max(now - started, 1e-6), bridge.runtime_hash)
                         last_preview = now
@@ -707,10 +916,8 @@ class DLSSNRFarnebackMotion:
 
 NODE_CLASS_MAPPINGS = {
     "DLSSNRLive": DLSSNRLive,
-    "DLSSNRFarnebackMotion": DLSSNRFarnebackMotion,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DLSSNRLive": "DLSSNR 实时预览 / 手动停止",
-    "DLSSNRFarnebackMotion": "DLSSNR 光流（Farneback）",
 }
