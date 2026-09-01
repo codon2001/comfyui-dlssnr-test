@@ -16,6 +16,7 @@ from PIL import Image, ImageSequence
 
 from .guidance import (depth_to_normal, estimate_color_guidance,
                        guidance_edge_map, motion_to_rgb)
+from .gpu_mapping import resolve_cuda_gpu
 from .nodes import (
     Bridge,
     Settings,
@@ -33,10 +34,28 @@ from .nodes import (
     _rgba8,
     _runtime_path,
     _sha256,
+    _verified,
     gpu_index,
     gpu_input,
     runtime_input,
 )
+
+
+VIDEO_WORKER_SHA256 = "778026368FA4541E8F3296E0B5DDA2818A3C1D037F0A12E110BF40BBBE4DE98A"
+VIDEO_WORKER_CPU_SHA256 = "E8DFE12F9D9605F6CACBCF4989BB60E287CA146FB1EFE2C15701737D93185177"
+
+
+def _native_video_workers() -> tuple[Path, Path]:
+    native = Path(__file__).resolve().parent / "native"
+    worker = native / "dlssnr_video_worker.exe"
+    fallback = native / "dlssnr_video_worker_cpu.exe"
+    if not _verified(worker, VIDEO_WORKER_SHA256):
+        raise RuntimeError(
+            "原生视频工作器缺失、损坏或版本不匹配，请重新解压完整的 V1.4.4 节点包。")
+    if not _verified(fallback, VIDEO_WORKER_CPU_SHA256):
+        raise RuntimeError(
+            "兼容视频工作器缺失、损坏或版本不匹配，请重新解压完整的 V1.4.4 节点包。")
+    return worker, fallback
 
 
 def _style(value) -> int:
@@ -1272,6 +1291,9 @@ class DLSSNRFastVideoNativeV16(DLSSNRStreamVideo):
             "default": 0.0, "min": 0.0, "max": 64.0, "step": 0.25,
             "tooltip": "0=不限速；1=按源帧率；其他数值为最高处理倍率。不会改变输出帧率。",
         })
+        # Append to preserve every existing V1.6.3 widget position.
+        required["nr_preset"] = (
+            ["0 Default", "1 Preset #1", "2 Preset #2", "3 Preset #3"],)
         return {
             "required": required,
             "optional": dict(inputs.get("optional", {})),
@@ -1290,7 +1312,8 @@ class DLSSNRFastVideoNativeV16(DLSSNRStreamVideo):
             video_path=kwargs.get("video_path", ""),
             output_path=kwargs.get("output_path", ""),
             dll_path=kwargs["dll_path"], gpu_device=kwargs["gpu_device"],
-            nr_preset="0 Default", preserve_audio=kwargs.get("preserve_audio", True),
+            nr_preset=kwargs.get("nr_preset", "0 Default"),
+            preserve_audio=kwargs.get("preserve_audio", True),
             automatic_mask=kwargs.get("automatic_mask", False),
             nr_style=kwargs.get("nr_style", "0 默认（Default）"),
             nr_intensity=kwargs.get("nr_intensity", 1.0),
@@ -1429,9 +1452,7 @@ class DLSSNRRealtimeStreamVideo:
             raise RuntimeError("视频流式处理需要 ffmpeg。")
         if not _has_nvenc(ffmpeg):
             raise RuntimeError("当前 ffmpeg 没有 NVIDIA NVENC，无法运行 GPU 视频流式处理。")
-        worker = Path(__file__).resolve().parent / "native" / "dlssnr_video_worker.exe"
-        if not worker.is_file():
-            raise RuntimeError("缺少原生视频工作器 native/dlssnr_video_worker.exe，请重新解压完整节点包。")
+        worker, _fallback_worker = _native_video_workers()
 
         try:
             import cv2
@@ -1466,6 +1487,7 @@ class DLSSNRRealtimeStreamVideo:
         core = Bridge._find_core()
         runtime_hash = _sha256(runtime)
         selected_gpu = gpu_index(gpu_device)
+        selected_mapping = resolve_cuda_gpu(selected_gpu)
         command = [
             str(worker), str(ffmpeg), str(source), str(video_only), str(runtime),
             str(core), str(width), str(height), f"{fps:.9f}", str(selected_gpu),
@@ -1577,7 +1599,9 @@ class DLSSNRRealtimeStreamVideo:
             status = (f"完成{stopped}：{frames}{suffix} 帧，{elapsed:.2f}s，"
                       f"原生常驻 DLSSNR={measured_fps:.2f} FPS，"
                       f"源/输出帧率={fps_num}/{fps_den} ({fps:.6f})，"
-                      f"GPU={selected_gpu}，后端={backend}，"
+                      f"GPU=CUDA {selected_gpu} → DXGI "
+                      f"{selected_mapping.dxgi_adapter_index} "
+                      f"({selected_mapping.adapter_name})，后端={backend}，"
                       f"音频={'保留' if audio_kept else '未复用'}，"
                       f"DLL SHA256={runtime_hash}")
             return (InputImpl.VideoFromFile(str(requested)), str(requested), status)

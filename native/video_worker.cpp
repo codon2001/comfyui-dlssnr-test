@@ -197,8 +197,8 @@ int ParseInt(const wchar_t* value) { return static_cast<int>(std::wcstol(value, 
 } // namespace
 
 int wmain(int argc, wchar_t** argv) {
-    if (argc != 22) {
-        std::fprintf(stderr, "video_worker: expected 21 arguments\n");
+    if (argc != 22 && argc != 29 && argc != 31) {
+        std::fprintf(stderr, "video_worker: expected 21, 28 or 30 arguments\n");
         return 2;
     }
     const std::wstring ffmpeg = argv[1];
@@ -208,7 +208,8 @@ int wmain(int argc, wchar_t** argv) {
     const std::wstring core = argv[5];
     const uint32_t width = static_cast<uint32_t>(ParseInt(argv[6]));
     const uint32_t height = static_cast<uint32_t>(ParseInt(argv[7]));
-    const std::wstring fps = argv[8];
+    const std::wstring fps = argc >= 31
+        ? std::wstring(argv[29]) + L"/" + argv[30] : std::wstring(argv[8]);
     const int gpu = ParseInt(argv[9]);
     const int preset = ParseInt(argv[10]);
     DlssnrSettingsC settings{};
@@ -224,6 +225,10 @@ int wmain(int argc, wchar_t** argv) {
     settings.motionScaleX = 1.0f;
     settings.motionScaleY = 1.0f;
     settings.colorTransfer = 0;
+    const bool reduceGrayTone = argc >= 29 && ParseInt(argv[25]) != 0;
+    settings.depthInverted = argc >= 29 ? ParseInt(argv[26]) : 1;
+    settings.motionScaleX = argc >= 29 ? static_cast<float>(ParseDouble(argv[27])) : 1.0f;
+    settings.motionScaleY = argc >= 29 ? static_cast<float>(ParseDouble(argv[28])) : 1.0f;
     const std::filesystem::path preview = argv[19];
     const std::filesystem::path stopSignal = argv[20];
     const double speedMultiplier = std::max(0.0, ParseDouble(argv[21]));
@@ -235,13 +240,15 @@ int wmain(int argc, wchar_t** argv) {
     if (job) SetInformationJobObject(job, JobObjectExtendedLimitInformation,
                                       &limits, sizeof(limits));
     const std::wstring decoderCommand = Quote(ffmpeg) +
-        L" -hide_banner -loglevel error -hwaccel cuda -i " + Quote(input) +
+        L" -hide_banner -loglevel error -hwaccel cuda -hwaccel_device " +
+        std::to_wstring(gpu) + L" -i " + Quote(input) +
         L" -map 0:v:0 -an -sn -dn -fps_mode passthrough -f rawvideo -pix_fmt rgba pipe:1";
     const std::wstring encoderCommand = Quote(ffmpeg) +
         L" -hide_banner -loglevel error -f rawvideo -pix_fmt rgba -s " +
         std::to_wstring(width) + L"x" + std::to_wstring(height) +
         L" -r " + fps + L" -i pipe:0 -an -c:v h264_nvenc -preset p4 "
-        L"-tune hq -rc vbr -cq 18 -b:v 0 -pix_fmt yuv420p -y " + Quote(output);
+        L"-tune hq -rc vbr -cq 18 -b:v 0 -gpu " + std::to_wstring(gpu) +
+        L" -pix_fmt yuv420p -y " + Quote(output);
     ChildProcess decoder{}, encoder{};
     std::string error;
     if (!SpawnWithPipe(decoderCommand, true, job, decoder, error) ||
@@ -281,7 +288,8 @@ int wmain(int argc, wchar_t** argv) {
         dlssSeconds += std::chrono::duration<double>(
             std::chrono::steady_clock::now() - stageStarted).count();
         stageStarted = std::chrono::steady_clock::now();
-        RestoreSourceColor(source.data(), processed.data(), width, height);
+        if (reduceGrayTone)
+            RestoreSourceColor(source.data(), processed.data(), width, height);
         colorSeconds += std::chrono::duration<double>(
             std::chrono::steady_clock::now() - stageStarted).count();
         stageStarted = std::chrono::steady_clock::now();

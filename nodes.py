@@ -34,7 +34,7 @@ BRIDGE_DLL = ROOT / "native" / "dlssnr_bridge.dll"
 BRIDGE_PORTABLE = ROOT / "native" / "dlssnr_bridge.bin"
 BUNDLED_RUNTIME = RUNTIME_DIR / "default" / "dlssnr.dll"
 BUNDLED_RUNTIME_PARTS = RUNTIME_DIR / "default" / "parts"
-BRIDGE_SHA256 = "2CB953A1999F17B0135E6E8E64BB37529F2F3953B59F827AA63D6771A385B074"
+BRIDGE_SHA256 = "B92F579EFED98E0AEA5A6C4F67315928C4CD1B435F67DD8CA7A756214575B57B"
 BUNDLED_RUNTIME_SHA256 = "984BEE0F775C277D5829B8FD6775D53A7B0F75396C852B3AAF06A18375F81014"
 DEFAULT_RUNTIME = ""
 _stop_events: dict[str, threading.Event] = {}
@@ -185,6 +185,8 @@ def gpu_input():
     choices = []
     if torch.cuda.is_available():
         for index in range(torch.cuda.device_count()):
+            # Keep the serialized value compatible with existing workflows.
+            # The native bridge maps this Torch/CUDA ordinal to DXGI by LUID.
             choices.append(f"{index}: {torch.cuda.get_device_name(index)}")
     return (choices or ["0: NVIDIA GPU"],)
 

@@ -11,6 +11,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from .gpu_mapping import directml_device_index
+
 
 ROOT = Path(__file__).resolve().parent
 DEPTH_MODEL = ROOT / "models" / "depth_anything_v2" / "model_fp16.onnx"
@@ -32,11 +34,12 @@ def _read_exact(stream, size: int) -> bytes:
 
 class _DmlDepthWorker:
     def __init__(self, gpu_index: int):
+        dxgi_index = directml_device_index(gpu_index)
         creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         self._lock = threading.Lock()
         self._process = subprocess.Popen(
             (sys.executable, "-u", str(ROOT / "depth_worker.py"),
-             str(DEPTH_MODEL), str(max(0, int(gpu_index)))),
+             str(DEPTH_MODEL), str(dxgi_index)),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, creationflags=creation_flags,
         )
@@ -185,7 +188,8 @@ def _depth_session(gpu_index: int, requested: str):
         providers.append(("CUDAExecutionProvider", {"device_id": int(gpu_index)}))
         provider_name = provider_name or "CUDA"
     if "DmlExecutionProvider" in available:
-        providers.append(("DmlExecutionProvider", {"device_id": int(gpu_index)}))
+        providers.append(("DmlExecutionProvider", {
+            "device_id": directml_device_index(gpu_index)}))
         provider_name = provider_name or "DirectML"
     if not providers:
         raise RuntimeError("ONNX Runtime 没有 CUDA/TensorRT/DirectML GPU Provider")

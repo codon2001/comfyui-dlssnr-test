@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cmath>
 #include <cstdio>
+#include <cwchar>
 #include <cstring>
 #include <filesystem>
 #include <mutex>
@@ -139,6 +140,131 @@ std::string NgxText(const char* stage, NVSDK_NGX_Result result) {
 
 bool NgxOk(NVSDK_NGX_Result result) { return NVSDK_NGX_SUCCEED(result); }
 
+std::string WideToUtf8(const wchar_t* value) {
+    if (!value || !*value) return {};
+    const int needed = WideCharToMultiByte(CP_UTF8, 0, value, -1, nullptr, 0,
+        nullptr, nullptr);
+    if (needed <= 1) return {};
+    std::string result(static_cast<size_t>(needed), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, value, -1, result.data(), needed,
+        nullptr, nullptr);
+    result.pop_back();
+    return result;
+}
+
+// Torch exposes CUDA ordinals while D3D/DirectML use DXGI adapter indices.
+// They are not interchangeable on hybrid and multi-GPU systems.  Match the
+// CUDA device to DXGI by the Windows LUID returned by the NVIDIA driver.
+struct GpuMapping {
+    int cudaIndex = -1;
+    int dxgiAdapterIndex = -1;
+    int dxgiNvidiaIndex = -1;
+    LUID luid{};
+    std::wstring adapterName;
+};
+
+using CuInitFn = int (WINAPI*)(unsigned int);
+using CuDeviceGetFn = int (WINAPI*)(int*, int);
+using CuDeviceGetLuidFn = int (WINAPI*)(char*, unsigned int*, int);
+
+bool ResolveCudaDeviceMapping(int cudaIndex, GpuMapping& mapping,
+    std::string& error) {
+    mapping = {};
+    mapping.cudaIndex = std::max(0, cudaIndex);
+    HMODULE cuda = LoadLibraryW(L"nvcuda.dll");
+    if (!cuda) {
+        error = "Cannot load nvcuda.dll while mapping Torch CUDA GPU to DXGI";
+        return false;
+    }
+    const auto cuInit = Export<CuInitFn>(cuda, "cuInit");
+    const auto cuDeviceGet = Export<CuDeviceGetFn>(cuda, "cuDeviceGet");
+    const auto cuDeviceGetLuid = Export<CuDeviceGetLuidFn>(cuda, "cuDeviceGetLuid");
+    if (!cuInit || !cuDeviceGet || !cuDeviceGetLuid) {
+        FreeLibrary(cuda);
+        error = "NVIDIA driver does not expose CUDA LUID mapping functions";
+        return false;
+    }
+    int device = 0;
+    unsigned int nodeMask = 0;
+    char luidBytes[sizeof(LUID)]{};
+    const int initResult = cuInit(0);
+    const int deviceResult = initResult == 0
+        ? cuDeviceGet(&device, mapping.cudaIndex) : initResult;
+    const int luidResult = deviceResult == 0
+        ? cuDeviceGetLuid(luidBytes, &nodeMask, device) : deviceResult;
+    FreeLibrary(cuda);
+    if (luidResult != 0) {
+        char detail[192]{};
+        std::snprintf(detail, sizeof(detail),
+            "Cannot resolve Torch CUDA GPU %d through NVIDIA driver (CUDA=%d)",
+            mapping.cudaIndex, luidResult);
+        error = detail;
+        return false;
+    }
+    std::memcpy(&mapping.luid, luidBytes, sizeof(mapping.luid));
+
+    IDXGIFactory1* localFactory = nullptr;
+    HRESULT hr = CreateDXGIFactory1(IID_IDXGIFactory1,
+        reinterpret_cast<void**>(&localFactory));
+    if (FAILED(hr)) {
+        error = HResultText("Create DXGI factory for CUDA mapping", hr);
+        return false;
+    }
+    int nvidiaOrdinal = 0;
+    for (UINT index = 0;; ++index) {
+        IDXGIAdapter1* candidate = nullptr;
+        if (localFactory->EnumAdapters1(index, &candidate) == DXGI_ERROR_NOT_FOUND) break;
+        DXGI_ADAPTER_DESC1 desc{};
+        candidate->GetDesc1(&desc);
+        const bool software = (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0;
+        const bool nvidia = desc.VendorId == 0x10DE && !software;
+        if (!software && std::memcmp(&desc.AdapterLuid, &mapping.luid,
+                sizeof(LUID)) == 0) {
+            mapping.dxgiAdapterIndex = static_cast<int>(index);
+            mapping.dxgiNvidiaIndex = nvidia ? nvidiaOrdinal : -1;
+            mapping.adapterName = desc.Description;
+            candidate->Release();
+            break;
+        }
+        if (nvidia) ++nvidiaOrdinal;
+        candidate->Release();
+    }
+    localFactory->Release();
+    if (mapping.dxgiAdapterIndex < 0 || mapping.dxgiNvidiaIndex < 0) {
+        char detail[192]{};
+        std::snprintf(detail, sizeof(detail),
+            "Torch CUDA GPU %d has no matching NVIDIA DXGI adapter (LUID mismatch)",
+            mapping.cudaIndex);
+        error = detail;
+        return false;
+    }
+    return true;
+}
+
+std::string GpuMappingText(const GpuMapping& mapping) {
+    char prefix[160]{};
+    std::snprintf(prefix, sizeof(prefix),
+        "Torch CUDA %d -> DXGI adapter %d / NVIDIA #%d",
+        mapping.cudaIndex, mapping.dxgiAdapterIndex, mapping.dxgiNvidiaIndex);
+    const std::string name = WideToUtf8(mapping.adapterName.c_str());
+    return name.empty() ? std::string(prefix) : std::string(prefix) + " (" + name + ")";
+}
+
+std::string NgxFeatureFailureText(NVSDK_NGX_Result result,
+    const GpuMapping& mapping) {
+    std::string message = NgxText("Create DLSSNR Feature 18", result) + " [" +
+        GpuMappingText(mapping) + "]. ";
+    if (static_cast<unsigned int>(result) == 0xbad00001u) {
+        message += "NGX reports FeatureNotSupported. DLSS 5 neural rendering "
+            "requires a supported RTX 50-series GPU; make sure the selected "
+            "GPU above is the RTX 50-series card.";
+    } else {
+        message += "Verify GPU support and that the NVIDIA driver/NGX runtime "
+            "versions match.";
+    }
+    return message;
+}
+
 // The driver-created parameter object uses NVIDIA's stable wrapper vtable
 // order, which differs from the declaration order in recent public headers.
 // Call the verified slots directly so this MinGW-built bridge remains ABI-safe.
@@ -253,6 +379,8 @@ struct Session {
     ID3D12Resource* motion12 = nullptr;
     ID3D12Resource* depth12 = nullptr;
     std::vector<uint8_t> colorUpload;
+    GpuMapping gpuMapping{};
+    std::string gpuMappingText;
 
     CoreInitFn coreInit = nullptr;
     AllocateParametersFn allocateParameters = nullptr;
@@ -376,16 +504,20 @@ struct Session {
 
         HRESULT hr = CreateDXGIFactory1(IID_IDXGIFactory6, reinterpret_cast<void**>(&factory));
         if (FAILED(hr)) { error = HResultText("Create DXGI factory", hr); return false; }
-        int nvidiaIndex = 0;
-        for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
-            DXGI_ADAPTER_DESC1 desc{}; adapter->GetDesc1(&desc);
-            if (desc.VendorId == 0x10DE && !(desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)) {
-                if (nvidiaIndex == std::max(0, requestedGpu)) break;
-                ++nvidiaIndex;
-            }
-            adapter->Release(); adapter = nullptr;
+        if (!ResolveCudaDeviceMapping(requestedGpu, gpuMapping, error)) return false;
+        gpuMappingText = GpuMappingText(gpuMapping);
+        if (factory->EnumAdapters1(static_cast<UINT>(gpuMapping.dxgiAdapterIndex),
+                &adapter) == DXGI_ERROR_NOT_FOUND || !adapter) {
+            error = "Mapped NVIDIA DXGI adapter disappeared: " + gpuMappingText;
+            return false;
         }
-        if (!adapter) { error = "Requested NVIDIA DXGI adapter was not found"; return false; }
+        DXGI_ADAPTER_DESC1 selectedDesc{};
+        adapter->GetDesc1(&selectedDesc);
+        if (std::memcmp(&selectedDesc.AdapterLuid, &gpuMapping.luid,
+                sizeof(LUID)) != 0) {
+            error = "DXGI adapter order changed during initialization: " + gpuMappingText;
+            return false;
+        }
         hr = D3D11CreateDevice(adapter, D3D_DRIVER_TYPE_UNKNOWN, nullptr, 0, nullptr, 0,
             D3D11_SDK_VERSION, &device11Base, nullptr, &context11Base);
         if (FAILED(hr)) { error = HResultText("Create D3D11 device", hr); return false; }
@@ -439,7 +571,12 @@ struct Session {
             localAppDataLength < std::size(localAppData)
             ? std::filesystem::path(localAppData)
             : std::filesystem::temp_directory_path();
-        cacheDirectory = (cacheBase / L"ComfyUI-DLSSNR-Live" / L"NGXCache").wstring();
+        wchar_t gpuCacheName[96]{};
+        std::swprintf(gpuCacheName, std::size(gpuCacheName),
+            L"gpu-%08lx-%08lx", static_cast<unsigned long>(gpuMapping.luid.HighPart),
+            static_cast<unsigned long>(gpuMapping.luid.LowPart));
+        cacheDirectory = (cacheBase / L"ComfyUI-DLSSNR-Live" / L"NGXCache" /
+            gpuCacheName).wstring();
         std::error_code cacheError;
         std::filesystem::create_directories(cacheDirectory, cacheError);
         if (cacheError) { error = "Cannot create isolated NGX cache directory"; return false; }
@@ -490,7 +627,10 @@ struct Session {
         ParamSet(parameters, NVSDK_NGX_Parameter_CreationNodeMask, 1u);
         ParamSet(parameters, NVSDK_NGX_Parameter_VisibilityNodeMask, 1u);
         ngx = createFeature(list12, kFeatureDlssnr, parameters, &feature);
-        if (!NgxOk(ngx) || !feature) { error = NgxText("Create DLSSNR Feature 18", ngx); return false; }
+        if (!NgxOk(ngx) || !feature) {
+            error = NgxFeatureFailureText(ngx, gpuMapping);
+            return false;
+        }
         hr = list12->Close();
         if (FAILED(hr)) { error = HResultText("Close initialization command list", hr); return false; }
         ID3D12CommandList* lists[]{list12}; queue12->ExecuteCommandLists(1, lists);
@@ -833,6 +973,28 @@ extern "C" __declspec(dllexport) void* dlssnr_create(
     }
     WriteError(error, errorCapacity, "");
     return session;
+}
+
+extern "C" __declspec(dllexport) int dlssnr_map_cuda_device(
+    int cudaIndex, int* dxgiAdapterIndex, int* dxgiNvidiaIndex,
+    wchar_t* adapterName, int adapterNameCapacity,
+    char* error, int errorCapacity) {
+    GpuMapping mapping{};
+    std::string message;
+    if (!ResolveCudaDeviceMapping(cudaIndex, mapping, message)) {
+        WriteError(error, errorCapacity, message);
+        return 0;
+    }
+    if (dxgiAdapterIndex) *dxgiAdapterIndex = mapping.dxgiAdapterIndex;
+    if (dxgiNvidiaIndex) *dxgiNvidiaIndex = mapping.dxgiNvidiaIndex;
+    if (adapterName && adapterNameCapacity > 0) {
+        const size_t count = std::min(mapping.adapterName.size(),
+            static_cast<size_t>(adapterNameCapacity - 1));
+        std::wmemcpy(adapterName, mapping.adapterName.data(), count);
+        adapterName[count] = 0;
+    }
+    WriteError(error, errorCapacity, "");
+    return 1;
 }
 
 extern "C" __declspec(dllexport) int dlssnr_process(

@@ -58,9 +58,9 @@ int RunCpuFallback(int argc, wchar_t** argv, const std::string& reason) {
     std::fprintf(stdout, "BACKEND_FALLBACK CPU_RGBA %s\n", reason.c_str());
     std::fflush(stdout);
     std::vector<const wchar_t*> arguments;
-    arguments.reserve(23);
+    arguments.reserve(static_cast<size_t>(argc) + 1);
     arguments.push_back(fallback.c_str());
-    for (int i = 1; i < std::min(argc, 22); ++i) arguments.push_back(argv[i]);
+    for (int i = 1; i < argc; ++i) arguments.push_back(argv[i]);
     arguments.push_back(nullptr);
     return static_cast<int>(_wspawnv(_P_WAIT, fallback.c_str(), arguments.data()));
 }
