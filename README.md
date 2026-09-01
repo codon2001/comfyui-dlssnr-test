@@ -17,7 +17,7 @@
 
 ## 推荐接线
 
-
+```text
 IMAGE ─→ 图像运算
           ├─ estimated_depth ─→ 任一 DLSSNR 节点 depth / Preview Image
           ├─ motion_vectors  ─→ 任一 DLSSNR 节点 motion_vectors
@@ -25,7 +25,7 @@ IMAGE ─→ 图像运算
           ├─ motion_preview  ─→ Preview Image / Save Image
           ├─ edge_image      ─→ Preview Image / Save Image
           └─ edge_mask       ─→ 其他 MASK 节点
-
+```
 其他连线请查看示例工作流
 
 
