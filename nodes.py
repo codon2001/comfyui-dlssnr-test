@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import base64
 import asyncio
@@ -34,7 +34,7 @@ BRIDGE_DLL = ROOT / "native" / "dlssnr_bridge.dll"
 BRIDGE_PORTABLE = ROOT / "native" / "dlssnr_bridge.bin"
 BUNDLED_RUNTIME = RUNTIME_DIR / "default" / "dlssnr.dll"
 BUNDLED_RUNTIME_PARTS = RUNTIME_DIR / "default" / "parts"
-BRIDGE_SHA256 = "8AA1C0ABC17A0EE0C32ECB602F8E7B749930A7B53FA17ECAD64106CFC4C9E24C"
+BRIDGE_SHA256 = "2CB953A1999F17B0135E6E8E64BB37529F2F3953B59F827AA63D6771A385B074"
 BUNDLED_RUNTIME_SHA256 = "984BEE0F775C277D5829B8FD6775D53A7B0F75396C852B3AAF06A18375F81014"
 DEFAULT_RUNTIME = ""
 _stop_events: dict[str, threading.Event] = {}
@@ -49,8 +49,9 @@ _HOT_SETTING_NAMES = {
     "automatic_mask", "nr_style", "nr_intensity", "local_tone_strength",
     "local_structure_strength", "skin_structure_strength", "ui_correction",
     "frame_guidance", "depth_convention", "motion_scale_x", "motion_scale_y",
-    "depth_inference_interval", "preview_fps", "safety_timeout_seconds",
-    "scene_paper_white_scale",
+    "depth_inference_interval", "preview_fps", "preview_max_side", "preview_jpeg_quality",
+    "safety_timeout_seconds",
+    "scene_paper_white_scale", "color_fix",
     "depth_assist_strength",
 }
 
@@ -324,17 +325,35 @@ if (PromptServer is not None and web is not None and
         except Exception:
             upload_dir = ROOT / "uploads"
         upload_dir.mkdir(parents=True, exist_ok=True)
-        destination = upload_dir / filename
-        if destination.exists():
-            stamp = time.strftime("%Y%m%d-%H%M%S")
-            destination = upload_dir / f"{destination.stem}_{stamp}{destination.suffix}"
-        with destination.open("wb") as output:
+        upload_id = "".join(ch for ch in str(request.query.get("upload_id", "single"))
+                            if ch.isalnum() or ch in "-_")[:80] or "single"
+        chunk_index = max(0, int(request.query.get("chunk", "0")))
+        chunk_count = max(1, int(request.query.get("chunks", "1")))
+        chunk_dir = upload_dir / ".dlssnr_chunks"
+        chunk_dir.mkdir(parents=True, exist_ok=True)
+        temporary = chunk_dir / f"{upload_id}.part"
+        if chunk_index == 0:
+            mode = "wb"
+        elif not temporary.is_file():
+            return web.json_response({"error": "上传分片顺序错误，请重新选择文件。"}, status=409)
+        else:
+            mode = "ab"
+        with temporary.open(mode) as output:
             while True:
                 chunk = await field.read_chunk(1024 * 1024)
                 if not chunk:
                     break
                 output.write(chunk)
-        return web.json_response({"path": str(destination.resolve())})
+        if chunk_index + 1 < chunk_count:
+            return web.json_response({"ok": True, "complete": False,
+                                      "chunk": chunk_index + 1, "chunks": chunk_count})
+        destination = upload_dir / filename
+        if destination.exists():
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            destination = upload_dir / f"{destination.stem}_{stamp}{destination.suffix}"
+        temporary.replace(destination)
+        return web.json_response({"ok": True, "complete": True,
+                                  "path": str(destination.resolve())})
 
 
 class Settings(ctypes.Structure):
@@ -588,11 +607,20 @@ def _restore_source_color(source_rgba: np.ndarray,
 def _apply_depth_assist(source_rgba: np.ndarray, processed_rgba: np.ndarray,
                         depth: np.ndarray | None, strength: float) -> np.ndarray:
     """Use depth in host-side compositing when the experimental DLL ignores it."""
+    return _apply_depth_assist_weight(
+        source_rgba, processed_rgba, _depth_assist_weight(depth, strength))
+
+
+def _depth_assist_weight(depth: np.ndarray | None,
+                         strength: float) -> np.ndarray | None:
+    """Build the expensive depth modulation map once for reusable depth."""
     amount = max(0.0, float(strength))
     if depth is None or amount <= 0.0:
-        return processed_rgba
+        return None
     values = np.nan_to_num(np.asarray(depth, dtype=np.float32), copy=False)
-    low, high = np.quantile(values, (0.02, 0.98))
+    sample_step = max(1, int(max(values.shape) // 512))
+    sample = values[::sample_step, ::sample_step]
+    low, high = np.quantile(sample, (0.02, 0.98))
     normalised = np.clip((values - low) / max(float(high - low), 1e-6), 0.0, 1.0)
     gradient_y, gradient_x = np.gradient(normalised)
     edge = np.hypot(gradient_x, gradient_y)
@@ -601,7 +629,14 @@ def _apply_depth_assist(source_rgba: np.ndarray, processed_rgba: np.ndarray,
     # Keep the average DLSSNR strength close to one.  Depth changes where its
     # local detail is applied; discontinuities receive a small extra emphasis.
     weight = 1.0 + (normalised - 0.5) * (0.60 * amount) + edge * (0.20 * amount)
-    weight = np.clip(weight, 0.15, 2.0)[..., None]
+    return np.ascontiguousarray(np.clip(weight, 0.15, 2.0)[..., None], dtype=np.float32)
+
+
+def _apply_depth_assist_weight(source_rgba: np.ndarray,
+                               processed_rgba: np.ndarray,
+                               weight: np.ndarray | None) -> np.ndarray:
+    if weight is None:
+        return processed_rgba
     source = source_rgba[..., :3].astype(np.float32)
     processed = processed_rgba[..., :3].astype(np.float32)
     assisted = source + (processed - source) * weight
@@ -613,11 +648,12 @@ def _apply_depth_assist(source_rgba: np.ndarray, processed_rgba: np.ndarray,
 
 def _process_dlssnr(bridge: Bridge, rgba: np.ndarray, settings: Settings,
                      depth=None, motion=None,
-                     depth_assist_strength: float = 0.0) -> np.ndarray:
+                     depth_assist_strength: float = 0.0,
+                     color_fix: bool = False) -> np.ndarray:
     processed = bridge.process(rgba, settings, depth, motion)
     processed = _apply_depth_assist(
         rgba, processed, depth, depth_assist_strength)
-    return _restore_source_color(rgba, processed)
+    return _restore_source_color(rgba, processed) if color_fix else processed
 
 
 def _rgba8(frame: torch.Tensor) -> np.ndarray:
@@ -668,15 +704,17 @@ def _preview_worker() -> None:
                 _preview_condition.wait()
             node_id, payload = next(iter(_preview_pending.items()))
             _preview_pending.pop(node_id, None)
-        rgba, iteration, fps, runtime_hash, state = payload
+        rgba, iteration, fps, runtime_hash, state, preview_max_side, preview_jpeg_quality = payload
         server = None if PromptServer is None else getattr(PromptServer, "instance", None)
         if server is None:
             continue
         try:
             image = Image.fromarray(rgba[..., :3], "RGB")
-            image.thumbnail((1920, 1080), Image.Resampling.LANCZOS)
+            max_side = max(320, min(4096, int(preview_max_side)))
+            image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
             buffer = io.BytesIO()
-            image.save(buffer, "JPEG", quality=90, optimize=False)
+            quality = max(50, min(100, int(preview_jpeg_quality)))
+            image.save(buffer, "JPEG", quality=quality, optimize=False)
             server.send_sync("dlssnr_live_preview", {
                 "node_id": node_id,
                 "image": base64.b64encode(buffer.getvalue()).decode("ascii"),
@@ -691,7 +729,9 @@ def _preview_worker() -> None:
 
 
 def _preview(node_id: str, rgba: np.ndarray, iteration: int, fps: float,
-             runtime_hash: str, state: str = "running") -> None:
+             runtime_hash: str, state: str = "running",
+             preview_max_side: int = 1920,
+             preview_jpeg_quality: int = 90) -> None:
     global _preview_thread
     server = None if PromptServer is None else getattr(PromptServer, "instance", None)
     if server is None:
@@ -700,7 +740,9 @@ def _preview(node_id: str, rgba: np.ndarray, iteration: int, fps: float,
     # safe. Replacing the dictionary entry drops stale previews automatically.
     with _preview_condition:
         _preview_pending[node_id] = (
-            rgba, int(iteration), float(fps), str(runtime_hash), str(state))
+            rgba, int(iteration), float(fps), str(runtime_hash), str(state),
+            max(320, min(4096, int(preview_max_side))),
+            max(50, min(100, int(preview_jpeg_quality))))
         if _preview_thread is None or not _preview_thread.is_alive():
             _preview_thread = threading.Thread(
                 target=_preview_worker, name="DLSSNRPreview", daemon=True)
@@ -725,12 +767,15 @@ class DLSSNRLive:
                 "local_structure_strength": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 2.0, "step": 0.05, "display": "slider"}),
                 "skin_structure_strength": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 2.0, "step": 0.05, "display": "slider"}),
                 "ui_correction": ("BOOLEAN", {"default": False}),
-                "frame_guidance": (["0 使用可用引导（深度和运动）", "1 强制零引导", "2 仅运动向量", "3 仅深度"],),
-                "depth_convention": (["1 反向深度（Inverted）", "0 正常深度（Normal）"],),
+                "color_fix": ("BOOLEAN", {"default": False, "tooltip": "打开后才执行色彩修复；默认保持原始 DLSSNR 色调。"}),
+                "frame_guidance": (["0 使用可用引导（深度和运动）", "1 强制零引导", "2 仅运动向量", "3 仅深度", "1 反向深度（Inverted）", "0 正常深度（Normal）"],),
+                "depth_convention": ("STRING", {"default": "1 反向深度（Inverted）"}),
                 "motion_scale_x": ("FLOAT", {"default": 1.0, "min": -4.0, "max": 4.0, "step": 0.05, "display": "slider"}),
                 "motion_scale_y": ("FLOAT", {"default": 1.0, "min": -4.0, "max": 4.0, "step": 0.05, "display": "slider"}),
                 "depth_inference_interval": ("INT", {"default": 4, "min": 1, "max": 8, "step": 1, "display": "slider"}),
                 "preview_fps": ("INT", {"default": 12, "min": 1, "max": 30, "step": 1, "display": "slider"}),
+                "preview_max_side": ("INT", {"default": 1920, "min": 320, "max": 4096, "step": 64, "display": "slider", "tooltip": "仅控制节点内预览传输尺寸，不改变 DLSSNR 处理与最终输出分辨率。1280 约等于 720p 预览档。"}),
+                "preview_jpeg_quality": ("INT", {"default": 90, "min": 50, "max": 100, "step": 1, "display": "slider", "tooltip": "仅控制节点内 JPEG 预览质量；调到 82 可降低预览延迟，不影响最终输出。"}),
                 "safety_timeout_seconds": ("INT", {"default": 300, "min": 0, "max": 86400, "step": 1, "display": "slider"}),
                 "scene_paper_white_scale": ("FLOAT", {"default": 1.0, "min": 0.25, "max": 4.0, "step": 0.05, "display": "slider", "tooltip": "等效场景纸白亮度；1.0保持原图，高于1提亮并保护高光。"}),
                 "depth_assist_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05, "display": "slider", "tooltip": "当前实验 DLL 可能忽略原生深度；此项在节点侧用深度调制局部增强，0 表示关闭。"}),
@@ -755,9 +800,10 @@ class DLSSNRLive:
     def run(self, image, run_mode, dll_path, gpu_device, nr_preset,
             automatic_mask, nr_style,
             nr_intensity, local_tone_strength, local_structure_strength,
-            skin_structure_strength, scene_paper_white_scale, ui_correction, frame_guidance,
+            skin_structure_strength, scene_paper_white_scale, ui_correction, color_fix, frame_guidance,
             depth_convention, motion_scale_x, motion_scale_y,
-            depth_inference_interval, preview_fps,
+            depth_inference_interval, preview_fps, preview_max_side,
+            preview_jpeg_quality,
             safety_timeout_seconds, depth_assist_strength,
             unique_id, depth=None, motion_vectors=None):
         node_id = str(unique_id)
@@ -780,6 +826,10 @@ class DLSSNRLive:
         last_rgba = last_input_rgba.copy()
         last_comparison = _comparison_rgba(last_input_rgba, last_rgba)
         applied_revision = 0
+        cached_live_depth = None
+        cached_live_motion = None
+        cached_depth_weight = None
+        cached_depth_weight_key = None
         try:
             with Bridge(dll_path, width, height, gpu_index(gpu_device),
                         int(str(nr_preset).split()[0])) as bridge:
@@ -799,6 +849,7 @@ class DLSSNRLive:
                             "scene_paper_white_scale", settings.paper_white_scale))
                         settings.auto_mask = int(bool(hot.get("automatic_mask", settings.auto_mask)))
                         settings.ui_correction = int(bool(hot.get("ui_correction", settings.ui_correction)))
+                        color_fix = bool(hot.get("color_fix", color_fix))
                         settings.depth_inverted = int(str(hot.get(
                             "depth_convention", settings.depth_inverted)).split()[0])
                         settings.motion_scale_x = float(hot.get(
@@ -809,6 +860,10 @@ class DLSSNRLive:
                         depth_inference_interval = max(1, int(hot.get(
                             "depth_inference_interval", depth_inference_interval)))
                         preview_fps = max(1, int(hot.get("preview_fps", preview_fps)))
+                        preview_max_side = max(320, min(4096, int(hot.get(
+                            "preview_max_side", preview_max_side))))
+                        preview_jpeg_quality = max(50, min(100, int(hot.get(
+                            "preview_jpeg_quality", preview_jpeg_quality))))
                         safety_timeout_seconds = max(0, int(hot.get(
                             "safety_timeout_seconds", safety_timeout_seconds)))
                         depth_assist_strength = float(hot.get(
@@ -817,14 +872,27 @@ class DLSSNRLive:
                     index = 0 if is_live else iteration
                     if not is_live and index >= batch:
                         break
-                    rgba = _rgba8(image[index])
+                    # Static live preview always evaluates the same input image.
+                    # Reuse its full-resolution RGBA buffer instead of copying
+                    # the ComfyUI tensor back to CPU on every iteration.
+                    rgba = last_input_rgba if is_live else _rgba8(image[index])
                     last_input_rgba = rgba
                     use_depth = guidance in (0, 3)
                     use_motion = guidance in (0, 2)
-                    depth_np = _depth_frame(depth, index, depth_inference_interval,
-                                            height, width) if use_depth else None
-                    motion_np = _motion_frame(motion_vectors, index, height, width) \
-                        if use_motion else None
+                    if is_live:
+                        if use_depth and cached_live_depth is None and depth is not None:
+                            cached_live_depth = _depth_frame(
+                                depth, 0, depth_inference_interval, height, width)
+                        if use_motion and cached_live_motion is None and motion_vectors is not None:
+                            cached_live_motion = _motion_frame(
+                                motion_vectors, 0, height, width)
+                        depth_np = cached_live_depth if use_depth else None
+                        motion_np = cached_live_motion if use_motion else None
+                    else:
+                        depth_np = _depth_frame(depth, index, depth_inference_interval,
+                                                height, width) if use_depth else None
+                        motion_np = _motion_frame(motion_vectors, index, height, width) \
+                            if use_motion else None
                     # Reset temporal history when hot parameters change so the
                     # first visible result represents the new values directly.
                     settings.reset = 1 if iteration == 0 or settings_changed else 0
@@ -837,9 +905,27 @@ class DLSSNRLive:
                     latest_revision, _ = _get_live_settings(node_id)
                     if is_live and latest_revision != applied_revision:
                         continue
-                    last_rgba = _apply_depth_assist(
-                        rgba, raw_processed, depth_np, depth_assist_strength)
-                    last_rgba = _restore_source_color(rgba, last_rgba)
+                    now = time.perf_counter()
+                    should_present = (not is_live or settings_changed or event.is_set() or
+                                      now - last_preview >= 1.0 / preview_fps)
+                    if is_live and not should_present:
+                        if safety_timeout_seconds and now - started >= safety_timeout_seconds:
+                            break
+                        try:
+                            import comfy.model_management as mm
+                            mm.throw_exception_if_processing_interrupted()
+                        except ImportError:
+                            pass
+                        continue
+                    weight_key = (id(depth_np), float(depth_assist_strength))
+                    if weight_key != cached_depth_weight_key:
+                        cached_depth_weight = _depth_assist_weight(
+                            depth_np, depth_assist_strength)
+                        cached_depth_weight_key = weight_key
+                    last_rgba = _apply_depth_assist_weight(
+                        rgba, raw_processed, cached_depth_weight)
+                    if color_fix:
+                        last_rgba = _restore_source_color(rgba, last_rgba)
                     latest_revision, _ = _get_live_settings(node_id)
                     if is_live and latest_revision != applied_revision:
                         continue
@@ -850,9 +936,11 @@ class DLSSNRLive:
                         comparison_results.append(
                             torch.from_numpy(last_comparison[..., :3].copy()).float() / 255.0)
                     now = time.perf_counter()
-                    if settings_changed or now - last_preview >= 1.0 / preview_fps:
+                    if should_present:
                         _preview(node_id, last_comparison, iteration,
-                                 iteration / max(now - started, 1e-6), bridge.runtime_hash)
+                                 iteration / max(now - started, 1e-6), bridge.runtime_hash,
+                                 preview_max_side=preview_max_side,
+                                 preview_jpeg_quality=preview_jpeg_quality)
                         last_preview = now
                     if event.is_set():
                         break
@@ -872,7 +960,8 @@ class DLSSNRLive:
                         torch.from_numpy(last_comparison[..., :3].copy()).float() / 255.0]
                 elapsed = time.perf_counter() - started
                 _preview(node_id, last_comparison, iteration,
-                         iteration / max(elapsed, 1e-6), bridge.runtime_hash, "stopped")
+                         iteration / max(elapsed, 1e-6), bridge.runtime_hash, "stopped",
+                         preview_max_side, preview_jpeg_quality)
                 status = (f"完成：{iteration} 次评估，{elapsed:.2f}s，"
                           f"DLL SHA256={bridge.runtime_hash}")
             return (
@@ -885,35 +974,6 @@ class DLSSNRLive:
             _clear_live_settings(node_id)
 
 
-class DLSSNRFarnebackMotion:
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {"image": ("IMAGE",), "strength": ("FLOAT", {
-            "default": 1.0, "min": 0.0, "max": 4.0, "step": 0.05})}}
-
-    RETURN_TYPES = ("DLSSNR_MOTION",)
-    RETURN_NAMES = ("motion_vectors",)
-    FUNCTION = "run"
-    CATEGORY = "image/DLSSNR Live"
-
-    def run(self, image, strength):
-        try:
-            import cv2
-        except ImportError as exc:
-            raise RuntimeError("计算光流需要 opencv-python；整合包通常已自带。") from exc
-        frames = image.detach().float().cpu().clamp(0, 1).numpy()[..., :3]
-        batch, height, width, _ = frames.shape
-        output = np.zeros((batch, height, width, 2), dtype=np.float32)
-        grays = [cv2.cvtColor((f * 255.0 + 0.5).astype(np.uint8), cv2.COLOR_RGB2GRAY)
-                 for f in frames]
-        for i in range(1, batch):
-            # DLSSNR expects current-to-previous motion in source pixels.
-            output[i] = cv2.calcOpticalFlowFarneback(
-                grays[i], grays[i - 1], None, 0.5, 4, 19, 4, 7, 1.5, 0
-            ) * float(strength)
-        return (torch.from_numpy(output),)
-
-
 NODE_CLASS_MAPPINGS = {
     "DLSSNRLive": DLSSNRLive,
 }
@@ -921,3 +981,5 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DLSSNRLive": "DLSSNR 实时预览 / 手动停止",
 }
+
+

@@ -1,0 +1,2912 @@
+{
+  "id": "4fce8928-4755-4dcf-986f-be2474d18b59",
+  "revision": 0,
+  "last_node_id": 201,
+  "last_link_id": 381,
+  "nodes": [
+    {
+      "id": 150,
+      "type": "PreviewImage",
+      "pos": [
+        -8322.606500103024,
+        8606.533361981357
+      ],
+      "size": [
+        140,
+        246.0000000000009
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 272
+        }
+      ],
+      "outputs": [
+        {
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.2",
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": [],
+      "widgets_values_named": {}
+    },
+    {
+      "id": 81,
+      "type": "DLSSNRSaveGIF",
+      "pos": [
+        -9672.241316499982,
+        6897.3647872174515
+      ],
+      "size": [
+        270,
+        126
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "图像帧",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 371
+        },
+        {
+          "label": "遮罩",
+          "name": "mask",
+          "shape": 7,
+          "type": "MASK",
+          "link": null
+        },
+        {
+          "label": "文件名前缀",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        },
+        {
+          "label": "单帧时长（毫秒）",
+          "name": "duration_ms",
+          "type": "INT",
+          "widget": {
+            "name": "duration_ms"
+          },
+          "link": null
+        },
+        {
+          "label": "循环次数",
+          "name": "loop_count",
+          "type": "INT",
+          "widget": {
+            "name": "loop_count"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "输出文件",
+          "name": "output_path",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "label": "状态",
+          "name": "status",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "aux_id": "codon2001/comfyui-dlssnr-test",
+        "Node name for S&R": "DLSSNRSaveGIF",
+        "ver": "930413c368803df0828b5f4a6b9a99cd7a4cf607"
+      },
+      "widgets_values": [
+        "DLSSNR_GIF",
+        100,
+        0
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "DLSSNR_GIF",
+        "duration_ms": 100,
+        "loop_count": 0
+      }
+    },
+    {
+      "id": 86,
+      "type": "SaveImageAdvanced",
+      "pos": [
+        -10579.024790942063,
+        8274.741059305506
+      ],
+      "size": [
+        270,
+        93
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 15,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 378
+        },
+        {
+          "label": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        },
+        {
+          "label": "format",
+          "name": "format",
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "format"
+          },
+          "link": null
+        },
+        {
+          "label": "format.bit_depth",
+          "name": "format.bit_depth",
+          "type": "COMBO",
+          "widget": {
+            "name": "format.bit_depth"
+          },
+          "link": null
+        },
+        {
+          "label": "format.input_color_space",
+          "name": "format.input_color_space",
+          "type": "COMBO",
+          "widget": {
+            "name": "format.input_color_space"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.2",
+        "Node name for S&R": "SaveImageAdvanced"
+      },
+      "widgets_values": [
+        "ComfyUI",
+        "png",
+        "8-bit",
+        "sRGB"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "ComfyUI",
+        "format": "png",
+        "format.bit_depth": "8-bit",
+        "format.input_color_space": "sRGB"
+      }
+    },
+    {
+      "id": 76,
+      "type": "Image Comparer (rgthree)",
+      "pos": [
+        -10623.56725952035,
+        8384.772130141086
+      ],
+      "size": [
+        511.4004756351027,
+        804.940795239303
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 4,
+      "inputs": [
+        {
+          "dir": 3,
+          "label": "image_a",
+          "name": "image_a",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 380
+        },
+        {
+          "dir": 3,
+          "label": "image_b",
+          "name": "image_b",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 381
+        }
+      ],
+      "outputs": [
+        {
+          "dir": 4,
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "rgthree-comfy",
+        "ver": "13b4399c00b5ef5a97b1b6800fc1185874740f5d",
+        "comparer_mode": "Slide",
+        "Node name for S&R": "Image Comparer (rgthree)"
+      },
+      "widgets_values": [
+        [
+          {
+            "name": "A",
+            "selected": true,
+            "url": "/api/view?filename=rgthree.compare._temp_yzpsp_00001_.png&type=temp&subfolder=&rand=0.8413772704448116"
+          },
+          {
+            "name": "B",
+            "selected": true,
+            "url": "/api/view?filename=rgthree.compare._temp_yzpsp_00002_.png&type=temp&subfolder=&rand=0.5722752420913669"
+          }
+        ]
+      ],
+      "widgets_values_named": {
+        "rgthree_comparer": {
+          "images": [
+            {
+              "name": "A",
+              "selected": true,
+              "url": "/api/view?filename=rgthree.compare._temp_yzpsp_00001_.png&type=temp&subfolder=&rand=0.8413772704448116",
+              "img": {}
+            },
+            {
+              "name": "B",
+              "selected": true,
+              "url": "/api/view?filename=rgthree.compare._temp_yzpsp_00002_.png&type=temp&subfolder=&rand=0.5722752420913669",
+              "img": {}
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 75,
+      "type": "SaveImageAdvanced",
+      "pos": [
+        -10585.214015709334,
+        8230.808520287132
+      ],
+      "size": [
+        270,
+        93
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 13,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 379
+        },
+        {
+          "label": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        },
+        {
+          "label": "format",
+          "name": "format",
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "format"
+          },
+          "link": null
+        },
+        {
+          "label": "format.bit_depth",
+          "name": "format.bit_depth",
+          "type": "COMBO",
+          "widget": {
+            "name": "format.bit_depth"
+          },
+          "link": null
+        },
+        {
+          "label": "format.input_color_space",
+          "name": "format.input_color_space",
+          "type": "COMBO",
+          "widget": {
+            "name": "format.input_color_space"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.2",
+        "Node name for S&R": "SaveImageAdvanced"
+      },
+      "widgets_values": [
+        "ComfyUI",
+        "png",
+        "8-bit",
+        "sRGB"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "ComfyUI",
+        "format": "png",
+        "format.bit_depth": "8-bit",
+        "format.input_color_space": "sRGB"
+      }
+    },
+    {
+      "id": 175,
+      "type": "SaveImage",
+      "pos": [
+        -8311.25727329306,
+        8293.276158877865
+      ],
+      "size": [
+        270,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 17,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 341
+        },
+        {
+          "label": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.2",
+        "Node name for S&R": "SaveImage"
+      },
+      "widgets_values": [
+        "ComfyUI"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "ComfyUI"
+      }
+    },
+    {
+      "id": 174,
+      "type": "SaveImage",
+      "pos": [
+        -8318.61782187566,
+        8383.376434463933
+      ],
+      "size": [
+        270,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 18,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 342
+        },
+        {
+          "label": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.2",
+        "Node name for S&R": "SaveImage"
+      },
+      "widgets_values": [
+        "ComfyUI"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "ComfyUI"
+      }
+    },
+    {
+      "id": 148,
+      "type": "PreviewImage",
+      "pos": [
+        -8319.414877926634,
+        8921.993093834033
+      ],
+      "size": [
+        140,
+        246
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 270
+        }
+      ],
+      "outputs": [
+        {
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.2",
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": [],
+      "widgets_values_named": {}
+    },
+    {
+      "id": 72,
+      "type": "Image Comparer (rgthree)",
+      "pos": [
+        -8855.211951900099,
+        8274.35814494006
+      ],
+      "size": [
+        506.7720321594619,
+        890.2493883697434
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 4,
+      "inputs": [
+        {
+          "dir": 3,
+          "label": "image_a",
+          "name": "image_a",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 340
+        },
+        {
+          "dir": 3,
+          "label": "image_b",
+          "name": "image_b",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 332
+        }
+      ],
+      "outputs": [
+        {
+          "dir": 4,
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "links": []
+        }
+      ],
+      "properties": {
+        "cnr_id": "rgthree-comfy",
+        "ver": "13b4399c00b5ef5a97b1b6800fc1185874740f5d",
+        "comparer_mode": "Slide",
+        "Node name for S&R": "Image Comparer (rgthree)"
+      },
+      "widgets_values": [
+        [
+          {
+            "name": "A",
+            "selected": true,
+            "url": "/api/view?filename=rgthree.compare._temp_tvhjp_00007_.png&type=temp&subfolder=&rand=0.845268662838054"
+          },
+          {
+            "name": "B",
+            "selected": true,
+            "url": "/api/view?filename=rgthree.compare._temp_tvhjp_00008_.png&type=temp&subfolder=&rand=0.5639212534051322"
+          }
+        ]
+      ],
+      "widgets_values_named": {
+        "rgthree_comparer": {
+          "images": [
+            {
+              "name": "A",
+              "selected": true,
+              "url": "/api/view?filename=rgthree.compare._temp_tvhjp_00007_.png&type=temp&subfolder=&rand=0.845268662838054",
+              "img": {}
+            },
+            {
+              "name": "B",
+              "selected": true,
+              "url": "/api/view?filename=rgthree.compare._temp_tvhjp_00008_.png&type=temp&subfolder=&rand=0.5639212534051322",
+              "img": {}
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 132,
+      "type": "DLSSNRColorGuidance",
+      "pos": [
+        -9653.40126677536,
+        8809.962679464554
+      ],
+      "size": [
+        305.7369140625,
+        434
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "图像",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 329
+        },
+        {
+          "label": "上一帧图像",
+          "name": "previous_image",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "label": "GPU设备",
+          "name": "gpu_device",
+          "type": "COMBO",
+          "widget": {
+            "name": "gpu_device"
+          },
+          "link": null
+        },
+        {
+          "label": "运动强度",
+          "name": "motion_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "motion_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "深度强度",
+          "name": "depth_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "depth_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "光流迭代次数",
+          "name": "flow_iterations",
+          "type": "INT",
+          "widget": {
+            "name": "flow_iterations"
+          },
+          "link": null
+        },
+        {
+          "label": "分析最大边长",
+          "name": "analysis_max_side",
+          "type": "INT",
+          "widget": {
+            "name": "analysis_max_side"
+          },
+          "link": null
+        },
+        {
+          "label": "深度估算方式",
+          "name": "depth_estimator",
+          "type": "COMBO",
+          "widget": {
+            "name": "depth_estimator"
+          },
+          "link": null
+        },
+        {
+          "label": "运动估算方式",
+          "name": "motion_estimator",
+          "type": "COMBO",
+          "widget": {
+            "name": "motion_estimator"
+          },
+          "link": null
+        },
+        {
+          "label": "启用深度推理",
+          "name": "enable_depth_estimation",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "enable_depth_estimation"
+          },
+          "link": null
+        },
+        {
+          "label": "法线重建强度",
+          "name": "normal_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "normal_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "描边强度",
+          "name": "edge_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "edge_strength"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "估算深度",
+          "name": "estimated_depth",
+          "type": "IMAGE",
+          "links": [
+            270,
+            339
+          ]
+        },
+        {
+          "label": "运动向量",
+          "name": "motion_vectors",
+          "type": "DLSSNR_MOTION",
+          "links": []
+        },
+        {
+          "label": "反应遮罩",
+          "name": "reactive_mask",
+          "type": "MASK",
+          "links": null
+        },
+        {
+          "label": "曝光比例",
+          "name": "exposure_ratio",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "label": "状态",
+          "name": "status",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "label": "估算法线图",
+          "name": "normal_map",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "label": "运动向量预览",
+          "name": "motion_preview",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "label": "描边图像",
+          "name": "edge_image",
+          "type": "IMAGE",
+          "links": [
+            272
+          ]
+        },
+        {
+          "label": "边缘遮罩",
+          "name": "edge_mask",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DLSSNRColorGuidance"
+      },
+      "widgets_values": [
+        "0: NVIDIA GeForce RTX 5070 Ti",
+        1,
+        1,
+        12,
+        960,
+        "Depth Anything V2 DirectML GPU（推荐）",
+        "精细 GPU 迭代光流（推荐）",
+        true,
+        2,
+        2
+      ],
+      "widgets_values_named": {
+        "gpu_device": "0: NVIDIA GeForce RTX 5070 Ti",
+        "motion_strength": 1,
+        "depth_strength": 1,
+        "flow_iterations": 12,
+        "analysis_max_side": 960,
+        "depth_estimator": "Depth Anything V2 DirectML GPU（推荐）",
+        "motion_estimator": "精细 GPU 迭代光流（推荐）",
+        "enable_depth_estimation": true,
+        "normal_strength": 2,
+        "edge_strength": 2
+      }
+    },
+    {
+      "id": 199,
+      "type": "DLSSNRLoadGIF",
+      "pos": [
+        -10631.635604954048,
+        6890.286332544711
+      ],
+      "size": [
+        270,
+        122
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "GIF文件",
+          "name": "gif_path",
+          "type": "STRING",
+          "widget": {
+            "name": "gif_path"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "图像",
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            370
+          ]
+        },
+        {
+          "label": "遮罩",
+          "name": "mask",
+          "type": "MASK",
+          "links": null
+        },
+        {
+          "label": "单帧时长（毫秒）",
+          "name": "duration_ms",
+          "type": "INT",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DLSSNRLoadGIF"
+      },
+      "widgets_values": [
+        "F:\\ComfyUI-aki-v3.2\\ComfyUI\\input\\dlssnr_uploads\\2_01_20260901-080908.gif"
+      ],
+      "widgets_values_named": {
+        "gif_path": "F:\\ComfyUI-aki-v3.2\\ComfyUI\\input\\dlssnr_uploads\\2_01_20260901-080908.gif"
+      }
+    },
+    {
+      "id": 130,
+      "type": "DLSSNRColorGuidance",
+      "pos": [
+        -12061.19216544264,
+        8667.041041676332
+      ],
+      "size": [
+        305.7369140625,
+        434
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "图像",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 225
+        },
+        {
+          "label": "上一帧图像",
+          "name": "previous_image",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "label": "GPU设备",
+          "name": "gpu_device",
+          "type": "COMBO",
+          "widget": {
+            "name": "gpu_device"
+          },
+          "link": null
+        },
+        {
+          "label": "运动强度",
+          "name": "motion_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "motion_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "深度强度",
+          "name": "depth_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "depth_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "光流迭代次数",
+          "name": "flow_iterations",
+          "type": "INT",
+          "widget": {
+            "name": "flow_iterations"
+          },
+          "link": null
+        },
+        {
+          "label": "分析最大边长",
+          "name": "analysis_max_side",
+          "type": "INT",
+          "widget": {
+            "name": "analysis_max_side"
+          },
+          "link": null
+        },
+        {
+          "label": "深度估算方式",
+          "name": "depth_estimator",
+          "type": "COMBO",
+          "widget": {
+            "name": "depth_estimator"
+          },
+          "link": null
+        },
+        {
+          "label": "运动估算方式",
+          "name": "motion_estimator",
+          "type": "COMBO",
+          "widget": {
+            "name": "motion_estimator"
+          },
+          "link": null
+        },
+        {
+          "label": "启用深度推理",
+          "name": "enable_depth_estimation",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "enable_depth_estimation"
+          },
+          "link": null
+        },
+        {
+          "label": "法线重建强度",
+          "name": "normal_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "normal_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "描边强度",
+          "name": "edge_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "edge_strength"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "估算深度",
+          "name": "estimated_depth",
+          "type": "IMAGE",
+          "links": [
+            377
+          ]
+        },
+        {
+          "label": "运动向量",
+          "name": "motion_vectors",
+          "type": "DLSSNR_MOTION",
+          "links": []
+        },
+        {
+          "label": "反应遮罩",
+          "name": "reactive_mask",
+          "type": "MASK",
+          "links": null
+        },
+        {
+          "label": "曝光比例",
+          "name": "exposure_ratio",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "label": "状态",
+          "name": "status",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "label": "估算法线图",
+          "name": "normal_map",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "label": "运动向量预览",
+          "name": "motion_preview",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "label": "描边图像",
+          "name": "edge_image",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "label": "边缘遮罩",
+          "name": "edge_mask",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DLSSNRColorGuidance"
+      },
+      "widgets_values": [
+        "0: NVIDIA GeForce RTX 5070 Ti",
+        1,
+        1,
+        12,
+        960,
+        "Depth Anything V2 DirectML GPU（推荐）",
+        "精细 GPU 迭代光流（推荐）",
+        true,
+        2,
+        2
+      ],
+      "widgets_values_named": {
+        "gpu_device": "0: NVIDIA GeForce RTX 5070 Ti",
+        "motion_strength": 1,
+        "depth_strength": 1,
+        "flow_iterations": 12,
+        "analysis_max_side": 960,
+        "depth_estimator": "Depth Anything V2 DirectML GPU（推荐）",
+        "motion_estimator": "精细 GPU 迭代光流（推荐）",
+        "enable_depth_estimation": true,
+        "normal_strength": 2,
+        "edge_strength": 2
+      }
+    },
+    {
+      "id": 173,
+      "type": "RTXVideoSuperResolution",
+      "pos": [
+        -9644.900705326896,
+        8654.650732736998
+      ],
+      "size": [
+        285.81015625,
+        106
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 328
+        },
+        {
+          "label": "scale",
+          "name": "scale",
+          "type": "FLOAT",
+          "widget": {
+            "name": "scale"
+          },
+          "link": null
+        },
+        {
+          "label": "quality",
+          "name": "quality",
+          "type": "COMBO",
+          "widget": {
+            "name": "quality"
+          },
+          "link": null
+        },
+        {
+          "label": "deblur",
+          "name": "deblur",
+          "type": "COMBO",
+          "widget": {
+            "name": "deblur"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "upscaled_images",
+          "name": "upscaled_images",
+          "type": "IMAGE",
+          "links": [
+            329,
+            332,
+            338
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "BetaDoggo/comfyui-rtx-simple",
+        "ver": "6ab989dc1b8ab85830ee256393ab263bf80cb3e7",
+        "Node name for S&R": "RTXVideoSuperResolution"
+      },
+      "widgets_values": [
+        2,
+        "ULTRA",
+        "OFF"
+      ],
+      "widgets_values_named": {
+        "scale": 2,
+        "quality": "ULTRA",
+        "deblur": "OFF"
+      }
+    },
+    {
+      "id": 70,
+      "type": "LoadImage",
+      "pos": [
+        -9644.073235453312,
+        8276.059948108197
+      ],
+      "size": [
+        270,
+        314
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "image",
+          "name": "image",
+          "type": "COMBO",
+          "widget": {
+            "name": "image"
+          },
+          "link": null
+        },
+        {
+          "label": "upload",
+          "name": "upload",
+          "type": "IMAGEUPLOAD",
+          "widget": {
+            "name": "upload"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            328
+          ]
+        },
+        {
+          "label": "MASK",
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.2",
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "5f2d8931e530929d3e1b2cb5181cac28424164582.png",
+        "image"
+      ],
+      "widgets_values_named": {
+        "image": "5f2d8931e530929d3e1b2cb5181cac28424164582.png",
+        "upload": "image"
+      }
+    },
+    {
+      "id": 181,
+      "type": "DLSSNRImageDirect",
+      "pos": [
+        -9307.984943493882,
+        8266.219868282858
+      ],
+      "size": [
+        430,
+        1006
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "图像",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 338
+        },
+        {
+          "label": "深度图",
+          "name": "depth",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 339
+        },
+        {
+          "label": "运动向量",
+          "name": "motion_vectors",
+          "shape": 7,
+          "type": "DLSSNR_MOTION",
+          "link": null
+        },
+        {
+          "label": "DLL文件",
+          "name": "dll_path",
+          "type": "COMBO",
+          "widget": {
+            "name": "dll_path"
+          },
+          "link": null
+        },
+        {
+          "label": "GPU设备",
+          "name": "gpu_device",
+          "type": "COMBO",
+          "widget": {
+            "name": "gpu_device"
+          },
+          "link": null
+        },
+        {
+          "label": "NR预设",
+          "name": "nr_preset",
+          "type": "COMBO",
+          "widget": {
+            "name": "nr_preset"
+          },
+          "link": null
+        },
+        {
+          "label": "自动遮罩",
+          "name": "automatic_mask",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "automatic_mask"
+          },
+          "link": null
+        },
+        {
+          "label": "降噪风格",
+          "name": "nr_style",
+          "type": "COMBO",
+          "widget": {
+            "name": "nr_style"
+          },
+          "link": null
+        },
+        {
+          "label": "降噪强度",
+          "name": "nr_intensity",
+          "type": "FLOAT",
+          "widget": {
+            "name": "nr_intensity"
+          },
+          "link": null
+        },
+        {
+          "label": "局部色调强度",
+          "name": "local_tone_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "local_tone_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "局部结构强度",
+          "name": "local_structure_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "local_structure_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "皮肤结构强度",
+          "name": "skin_structure_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "skin_structure_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "场景纸白亮度",
+          "name": "scene_paper_white_scale",
+          "type": "FLOAT",
+          "widget": {
+            "name": "scene_paper_white_scale"
+          },
+          "link": null
+        },
+        {
+          "label": "UI修正",
+          "name": "ui_correction",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "ui_correction"
+          },
+          "link": null
+        },
+        {
+          "label": "色彩修复",
+          "name": "color_fix",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "color_fix"
+          },
+          "link": null
+        },
+        {
+          "label": "帧引导方式",
+          "name": "frame_guidance",
+          "type": "COMBO",
+          "widget": {
+            "name": "frame_guidance"
+          },
+          "link": null
+        },
+        {
+          "label": "深度方向",
+          "name": "depth_convention",
+          "type": "STRING",
+          "widget": {
+            "name": "depth_convention"
+          },
+          "link": null
+        },
+        {
+          "label": "运动向量X缩放",
+          "name": "motion_scale_x",
+          "type": "FLOAT",
+          "widget": {
+            "name": "motion_scale_x"
+          },
+          "link": null
+        },
+        {
+          "label": "运动向量Y缩放",
+          "name": "motion_scale_y",
+          "type": "FLOAT",
+          "widget": {
+            "name": "motion_scale_y"
+          },
+          "link": null
+        },
+        {
+          "label": "从颜色估算缺失引导",
+          "name": "estimate_missing_from_color",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "estimate_missing_from_color"
+          },
+          "link": null
+        },
+        {
+          "label": "深度估算方式",
+          "name": "depth_estimator",
+          "type": "COMBO",
+          "widget": {
+            "name": "depth_estimator"
+          },
+          "link": null
+        },
+        {
+          "label": "运动估算方式",
+          "name": "motion_estimator",
+          "type": "COMBO",
+          "widget": {
+            "name": "motion_estimator"
+          },
+          "link": null
+        },
+        {
+          "label": "启用深度推理",
+          "name": "enable_depth_estimation",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "enable_depth_estimation"
+          },
+          "link": null
+        },
+        {
+          "label": "guidance_warmup_iterations",
+          "name": "guidance_warmup_iterations",
+          "type": "INT",
+          "widget": {
+            "name": "guidance_warmup_iterations"
+          },
+          "link": null
+        },
+        {
+          "label": "节点侧深度辅助强度",
+          "name": "depth_assist_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "depth_assist_strength"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "处理后图像",
+          "name": "processed_image",
+          "type": "IMAGE",
+          "links": [
+            340,
+            341
+          ]
+        },
+        {
+          "label": "对比图像",
+          "name": "comparison_image",
+          "type": "IMAGE",
+          "links": [
+            342
+          ]
+        },
+        {
+          "label": "状态",
+          "name": "status",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DLSSNRImageDirect"
+      },
+      "widgets_values": [
+        "default/dlssnr.dll",
+        "0: NVIDIA GeForce RTX 5070 Ti",
+        "0 Default",
+        false,
+        "0 默认（Default）",
+        2,
+        2,
+        2,
+        2,
+        1,
+        false,
+        true,
+        "3 仅深度",
+        "1 反向深度（Inverted）",
+        1,
+        1,
+        false,
+        "Depth Anything V2 DirectML GPU（推荐）",
+        "精细 GPU 迭代光流（推荐）",
+        true,
+        2,
+        2
+      ],
+      "widgets_values_named": {
+        "dll_path": "default/dlssnr.dll",
+        "gpu_device": "0: NVIDIA GeForce RTX 5070 Ti",
+        "nr_preset": "0 Default",
+        "automatic_mask": false,
+        "nr_style": "0 默认（Default）",
+        "nr_intensity": 2,
+        "local_tone_strength": 2,
+        "local_structure_strength": 2,
+        "skin_structure_strength": 2,
+        "scene_paper_white_scale": 1,
+        "ui_correction": false,
+        "color_fix": true,
+        "frame_guidance": "3 仅深度",
+        "depth_convention": "1 反向深度（Inverted）",
+        "motion_scale_x": 1,
+        "motion_scale_y": 1,
+        "estimate_missing_from_color": false,
+        "depth_estimator": "Depth Anything V2 DirectML GPU（推荐）",
+        "motion_estimator": "精细 GPU 迭代光流（推荐）",
+        "enable_depth_estimation": true,
+        "guidance_warmup_iterations": 2,
+        "depth_assist_strength": 2
+      }
+    },
+    {
+      "id": 195,
+      "type": "DLSSNRFastVideo",
+      "pos": [
+        -11668.838949119656,
+        6450.170530766616
+      ],
+      "size": [
+        563.667435817104,
+        1157.0194469930675
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "视频",
+          "name": "video",
+          "shape": 7,
+          "type": "VIDEO",
+          "link": null
+        },
+        {
+          "label": "输入视频文件",
+          "name": "video_path",
+          "type": "STRING",
+          "widget": {
+            "name": "video_path"
+          },
+          "link": null
+        },
+        {
+          "label": "输出文件",
+          "name": "output_path",
+          "type": "STRING",
+          "widget": {
+            "name": "output_path"
+          },
+          "link": null
+        },
+        {
+          "label": "DLL文件",
+          "name": "dll_path",
+          "type": "COMBO",
+          "widget": {
+            "name": "dll_path"
+          },
+          "link": null
+        },
+        {
+          "label": "GPU设备",
+          "name": "gpu_device",
+          "type": "COMBO",
+          "widget": {
+            "name": "gpu_device"
+          },
+          "link": null
+        },
+        {
+          "label": "保留音频",
+          "name": "preserve_audio",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "preserve_audio"
+          },
+          "link": null
+        },
+        {
+          "label": "自动遮罩",
+          "name": "automatic_mask",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "automatic_mask"
+          },
+          "link": null
+        },
+        {
+          "label": "降噪风格",
+          "name": "nr_style",
+          "type": "COMBO",
+          "widget": {
+            "name": "nr_style"
+          },
+          "link": null
+        },
+        {
+          "label": "降噪强度",
+          "name": "nr_intensity",
+          "type": "FLOAT",
+          "widget": {
+            "name": "nr_intensity"
+          },
+          "link": null
+        },
+        {
+          "label": "局部色调强度",
+          "name": "local_tone_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "local_tone_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "局部结构强度",
+          "name": "local_structure_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "local_structure_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "皮肤结构强度",
+          "name": "skin_structure_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "skin_structure_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "场景纸白亮度",
+          "name": "scene_paper_white_scale",
+          "type": "FLOAT",
+          "widget": {
+            "name": "scene_paper_white_scale"
+          },
+          "link": null
+        },
+        {
+          "label": "UI修正",
+          "name": "ui_correction",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "ui_correction"
+          },
+          "link": null
+        },
+        {
+          "label": "色彩修复",
+          "name": "color_fix",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "color_fix"
+          },
+          "link": null
+        },
+        {
+          "label": "帧引导方式",
+          "name": "frame_guidance",
+          "type": "COMBO",
+          "widget": {
+            "name": "frame_guidance"
+          },
+          "link": null
+        },
+        {
+          "label": "深度方向",
+          "name": "depth_convention",
+          "type": "STRING",
+          "widget": {
+            "name": "depth_convention"
+          },
+          "link": null
+        },
+        {
+          "label": "运动向量X缩放",
+          "name": "motion_scale_x",
+          "type": "FLOAT",
+          "widget": {
+            "name": "motion_scale_x"
+          },
+          "link": null
+        },
+        {
+          "label": "运动向量Y缩放",
+          "name": "motion_scale_y",
+          "type": "FLOAT",
+          "widget": {
+            "name": "motion_scale_y"
+          },
+          "link": null
+        },
+        {
+          "label": "运动强度",
+          "name": "motion_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "motion_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "深度强度",
+          "name": "depth_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "depth_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "光流迭代次数",
+          "name": "flow_iterations",
+          "type": "INT",
+          "widget": {
+            "name": "flow_iterations"
+          },
+          "link": null
+        },
+        {
+          "label": "分析最大边长",
+          "name": "analysis_max_side",
+          "type": "INT",
+          "widget": {
+            "name": "analysis_max_side"
+          },
+          "link": null
+        },
+        {
+          "label": "预览帧率",
+          "name": "preview_fps",
+          "type": "INT",
+          "widget": {
+            "name": "preview_fps"
+          },
+          "link": null
+        },
+        {
+          "label": "深度推理间隔",
+          "name": "depth_inference_interval",
+          "type": "INT",
+          "widget": {
+            "name": "depth_inference_interval"
+          },
+          "link": null
+        },
+        {
+          "label": "深度估算方式",
+          "name": "depth_estimator",
+          "type": "COMBO",
+          "widget": {
+            "name": "depth_estimator"
+          },
+          "link": null
+        },
+        {
+          "label": "运动估算方式",
+          "name": "motion_estimator",
+          "type": "COMBO",
+          "widget": {
+            "name": "motion_estimator"
+          },
+          "link": null
+        },
+        {
+          "label": "启用深度推理",
+          "name": "enable_depth_estimation",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "enable_depth_estimation"
+          },
+          "link": null
+        },
+        {
+          "label": "启用GPU帧生成",
+          "name": "enable_frame_generation",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "enable_frame_generation"
+          },
+          "link": null
+        },
+        {
+          "label": "帧生成倍率",
+          "name": "frame_generation_multiplier",
+          "type": "INT",
+          "widget": {
+            "name": "frame_generation_multiplier"
+          },
+          "link": null
+        },
+        {
+          "label": "播放处理倍率",
+          "name": "playback_speed",
+          "type": "FLOAT",
+          "widget": {
+            "name": "playback_speed"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "处理后视频",
+          "name": "processed_video",
+          "type": "VIDEO",
+          "links": []
+        },
+        {
+          "label": "输出文件",
+          "name": "output_path",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "label": "状态",
+          "name": "status",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DLSSNRFastVideo"
+      },
+      "widgets_values": [
+        "F:\\ComfyUI-aki-v3.2\\ComfyUI\\input\\dlssnr_uploads\\Wuthering Waves 2026.08.29 - 15.14.39.03.mp4",
+        "",
+        "default/dlssnr.dll",
+        "0: NVIDIA GeForce RTX 5070 Ti",
+        true,
+        false,
+        "2 电影感（Cinematic）",
+        1,
+        1,
+        1,
+        1,
+        1,
+        false,
+        false,
+        "3 仅从RGB估算深度",
+        "1 反向深度（Inverted）",
+        1,
+        1,
+        1,
+        1,
+        12,
+        960,
+        8,
+        4,
+        "原生 D3D11 GPU 深度（高速推荐）",
+        "原生 D3D11 GPU 运动（高速推荐）",
+        true,
+        false,
+        2,
+        0
+      ],
+      "widgets_values_named": {
+        "video_path": "F:\\ComfyUI-aki-v3.2\\ComfyUI\\input\\dlssnr_uploads\\Wuthering Waves 2026.08.29 - 15.14.39.03.mp4",
+        "output_path": "",
+        "dll_path": "default/dlssnr.dll",
+        "gpu_device": "0: NVIDIA GeForce RTX 5070 Ti",
+        "preserve_audio": true,
+        "automatic_mask": false,
+        "nr_style": "2 电影感（Cinematic）",
+        "nr_intensity": 1,
+        "local_tone_strength": 1,
+        "local_structure_strength": 1,
+        "skin_structure_strength": 1,
+        "scene_paper_white_scale": 1,
+        "ui_correction": false,
+        "color_fix": false,
+        "frame_guidance": "3 仅从RGB估算深度",
+        "depth_convention": "1 反向深度（Inverted）",
+        "motion_scale_x": 1,
+        "motion_scale_y": 1,
+        "motion_strength": 1,
+        "depth_strength": 1,
+        "flow_iterations": 12,
+        "analysis_max_side": 960,
+        "preview_fps": 8,
+        "depth_inference_interval": 4,
+        "depth_estimator": "原生 D3D11 GPU 深度（高速推荐）",
+        "motion_estimator": "原生 D3D11 GPU 运动（高速推荐）",
+        "enable_depth_estimation": true,
+        "enable_frame_generation": false,
+        "frame_generation_multiplier": 2,
+        "playback_speed": 0
+      }
+    },
+    {
+      "id": 74,
+      "type": "LoadImage",
+      "pos": [
+        -12045.29376578425,
+        8235.51403587385
+      ],
+      "size": [
+        270,
+        314.0000000000009
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "image",
+          "name": "image",
+          "type": "COMBO",
+          "widget": {
+            "name": "image"
+          },
+          "link": null
+        },
+        {
+          "label": "upload",
+          "name": "upload",
+          "type": "IMAGEUPLOAD",
+          "widget": {
+            "name": "upload"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            225,
+            375,
+            381
+          ]
+        },
+        {
+          "label": "MASK",
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.33.2",
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "~5H$NK4XBYU49C%E97XY{]W.jpg",
+        "image"
+      ],
+      "widgets_values_named": {
+        "image": "~5H$NK4XBYU49C%E97XY{]W.jpg",
+        "upload": "image"
+      }
+    },
+    {
+      "id": 201,
+      "type": "DLSSNRLive",
+      "pos": [
+        -11653.295003740486,
+        8190.322205930879
+      ],
+      "size": [
+        1000,
+        1144
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "图像",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 375
+        },
+        {
+          "label": "深度图",
+          "name": "depth",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 377
+        },
+        {
+          "label": "运动向量",
+          "name": "motion_vectors",
+          "shape": 7,
+          "type": "DLSSNR_MOTION",
+          "link": null
+        },
+        {
+          "label": "运行模式",
+          "name": "run_mode",
+          "type": "COMBO",
+          "widget": {
+            "name": "run_mode"
+          },
+          "link": null
+        },
+        {
+          "label": "DLL文件",
+          "name": "dll_path",
+          "type": "COMBO",
+          "widget": {
+            "name": "dll_path"
+          },
+          "link": null
+        },
+        {
+          "label": "GPU设备",
+          "name": "gpu_device",
+          "type": "COMBO",
+          "widget": {
+            "name": "gpu_device"
+          },
+          "link": null
+        },
+        {
+          "label": "NR预设",
+          "name": "nr_preset",
+          "type": "COMBO",
+          "widget": {
+            "name": "nr_preset"
+          },
+          "link": null
+        },
+        {
+          "label": "自动遮罩",
+          "name": "automatic_mask",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "automatic_mask"
+          },
+          "link": null
+        },
+        {
+          "label": "降噪风格",
+          "name": "nr_style",
+          "type": "COMBO",
+          "widget": {
+            "name": "nr_style"
+          },
+          "link": null
+        },
+        {
+          "label": "降噪强度",
+          "name": "nr_intensity",
+          "type": "FLOAT",
+          "widget": {
+            "name": "nr_intensity"
+          },
+          "link": null
+        },
+        {
+          "label": "局部色调强度",
+          "name": "local_tone_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "local_tone_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "局部结构强度",
+          "name": "local_structure_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "local_structure_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "皮肤结构强度",
+          "name": "skin_structure_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "skin_structure_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "UI修正",
+          "name": "ui_correction",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "ui_correction"
+          },
+          "link": null
+        },
+        {
+          "label": "色彩修复",
+          "name": "color_fix",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "color_fix"
+          },
+          "link": null
+        },
+        {
+          "label": "帧引导方式",
+          "name": "frame_guidance",
+          "type": "COMBO",
+          "widget": {
+            "name": "frame_guidance"
+          },
+          "link": null
+        },
+        {
+          "label": "深度方向",
+          "name": "depth_convention",
+          "type": "STRING",
+          "widget": {
+            "name": "depth_convention"
+          },
+          "link": null
+        },
+        {
+          "label": "运动向量X缩放",
+          "name": "motion_scale_x",
+          "type": "FLOAT",
+          "widget": {
+            "name": "motion_scale_x"
+          },
+          "link": null
+        },
+        {
+          "label": "运动向量Y缩放",
+          "name": "motion_scale_y",
+          "type": "FLOAT",
+          "widget": {
+            "name": "motion_scale_y"
+          },
+          "link": null
+        },
+        {
+          "label": "深度推理间隔",
+          "name": "depth_inference_interval",
+          "type": "INT",
+          "widget": {
+            "name": "depth_inference_interval"
+          },
+          "link": null
+        },
+        {
+          "label": "预览帧率",
+          "name": "preview_fps",
+          "type": "INT",
+          "widget": {
+            "name": "preview_fps"
+          },
+          "link": null
+        },
+        {
+          "label": "预览最长边",
+          "name": "preview_max_side",
+          "type": "INT",
+          "widget": {
+            "name": "preview_max_side"
+          },
+          "link": null
+        },
+        {
+          "label": "预览 JPEG 质量",
+          "name": "preview_jpeg_quality",
+          "type": "INT",
+          "widget": {
+            "name": "preview_jpeg_quality"
+          },
+          "link": null
+        },
+        {
+          "label": "安全超时（秒）",
+          "name": "safety_timeout_seconds",
+          "type": "INT",
+          "widget": {
+            "name": "safety_timeout_seconds"
+          },
+          "link": null
+        },
+        {
+          "label": "场景纸白亮度",
+          "name": "scene_paper_white_scale",
+          "type": "FLOAT",
+          "widget": {
+            "name": "scene_paper_white_scale"
+          },
+          "link": null
+        },
+        {
+          "label": "节点侧深度辅助强度",
+          "name": "depth_assist_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "depth_assist_strength"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "处理后图像",
+          "name": "processed_image",
+          "type": "IMAGE",
+          "links": [
+            379,
+            380
+          ]
+        },
+        {
+          "label": "对比图像",
+          "name": "comparison_image",
+          "type": "IMAGE",
+          "links": [
+            378
+          ]
+        },
+        {
+          "label": "状态",
+          "name": "status",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DLSSNRLive"
+      },
+      "widgets_values": [
+        "实时静态图（手动停止）",
+        "default/dlssnr.dll",
+        "0: NVIDIA GeForce RTX 5070 Ti",
+        "0 Default",
+        false,
+        "1 自然（Natural）",
+        2,
+        2,
+        0.72,
+        2,
+        false,
+        true,
+        "0 使用可用引导（深度和运动）",
+        "1 反向深度（Inverted）",
+        1,
+        1,
+        4,
+        30,
+        1280,
+        100,
+        300,
+        1,
+        1
+      ],
+      "widgets_values_named": {
+        "run_mode": "实时静态图（手动停止）",
+        "dll_path": "default/dlssnr.dll",
+        "gpu_device": "0: NVIDIA GeForce RTX 5070 Ti",
+        "nr_preset": "0 Default",
+        "automatic_mask": false,
+        "nr_style": "1 自然（Natural）",
+        "nr_intensity": 2,
+        "local_tone_strength": 2,
+        "local_structure_strength": 0.72,
+        "skin_structure_strength": 2,
+        "ui_correction": false,
+        "color_fix": true,
+        "frame_guidance": "0 使用可用引导（深度和运动）",
+        "depth_convention": "1 反向深度（Inverted）",
+        "motion_scale_x": 1,
+        "motion_scale_y": 1,
+        "depth_inference_interval": 4,
+        "preview_fps": 30,
+        "preview_max_side": 1280,
+        "preview_jpeg_quality": 100,
+        "safety_timeout_seconds": 300,
+        "scene_paper_white_scale": 1,
+        "depth_assist_strength": 1
+      }
+    },
+    {
+      "id": 200,
+      "type": "DLSSNRProcessGIF",
+      "pos": [
+        -10230.66917246601,
+        6477.7483598312065
+      ],
+      "size": [
+        427.20792523265845,
+        1048.4047818489162
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "图像",
+          "name": "image",
+          "type": "IMAGE",
+          "link": 370
+        },
+        {
+          "label": "深度图",
+          "name": "depth",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "label": "运动向量",
+          "name": "motion_vectors",
+          "shape": 7,
+          "type": "DLSSNR_MOTION",
+          "link": null
+        },
+        {
+          "label": "DLL文件",
+          "name": "dll_path",
+          "type": "COMBO",
+          "widget": {
+            "name": "dll_path"
+          },
+          "link": null
+        },
+        {
+          "label": "GPU设备",
+          "name": "gpu_device",
+          "type": "COMBO",
+          "widget": {
+            "name": "gpu_device"
+          },
+          "link": null
+        },
+        {
+          "label": "NR预设",
+          "name": "nr_preset",
+          "type": "COMBO",
+          "widget": {
+            "name": "nr_preset"
+          },
+          "link": null
+        },
+        {
+          "label": "自动遮罩",
+          "name": "automatic_mask",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "automatic_mask"
+          },
+          "link": null
+        },
+        {
+          "label": "降噪风格",
+          "name": "nr_style",
+          "type": "COMBO",
+          "widget": {
+            "name": "nr_style"
+          },
+          "link": null
+        },
+        {
+          "label": "降噪强度",
+          "name": "nr_intensity",
+          "type": "FLOAT",
+          "widget": {
+            "name": "nr_intensity"
+          },
+          "link": null
+        },
+        {
+          "label": "局部色调强度",
+          "name": "local_tone_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "local_tone_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "局部结构强度",
+          "name": "local_structure_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "local_structure_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "皮肤结构强度",
+          "name": "skin_structure_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "skin_structure_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "场景纸白亮度",
+          "name": "scene_paper_white_scale",
+          "type": "FLOAT",
+          "widget": {
+            "name": "scene_paper_white_scale"
+          },
+          "link": null
+        },
+        {
+          "label": "UI修正",
+          "name": "ui_correction",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "ui_correction"
+          },
+          "link": null
+        },
+        {
+          "label": "色彩修复",
+          "name": "color_fix",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "color_fix"
+          },
+          "link": null
+        },
+        {
+          "label": "帧引导方式",
+          "name": "frame_guidance",
+          "type": "COMBO",
+          "widget": {
+            "name": "frame_guidance"
+          },
+          "link": null
+        },
+        {
+          "label": "深度方向",
+          "name": "depth_convention",
+          "type": "STRING",
+          "widget": {
+            "name": "depth_convention"
+          },
+          "link": null
+        },
+        {
+          "label": "运动向量X缩放",
+          "name": "motion_scale_x",
+          "type": "FLOAT",
+          "widget": {
+            "name": "motion_scale_x"
+          },
+          "link": null
+        },
+        {
+          "label": "运动向量Y缩放",
+          "name": "motion_scale_y",
+          "type": "FLOAT",
+          "widget": {
+            "name": "motion_scale_y"
+          },
+          "link": null
+        },
+        {
+          "label": "深度推理间隔",
+          "name": "depth_inference_interval",
+          "type": "INT",
+          "widget": {
+            "name": "depth_inference_interval"
+          },
+          "link": null
+        },
+        {
+          "label": "从颜色估算缺失引导",
+          "name": "estimate_missing_from_color",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "estimate_missing_from_color"
+          },
+          "link": null
+        },
+        {
+          "label": "运动强度",
+          "name": "motion_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "motion_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "预览帧率",
+          "name": "preview_fps",
+          "type": "INT",
+          "widget": {
+            "name": "preview_fps"
+          },
+          "link": null
+        },
+        {
+          "label": "光流迭代次数",
+          "name": "flow_iterations",
+          "type": "INT",
+          "widget": {
+            "name": "flow_iterations"
+          },
+          "link": null
+        },
+        {
+          "label": "分析最大边长",
+          "name": "analysis_max_side",
+          "type": "INT",
+          "widget": {
+            "name": "analysis_max_side"
+          },
+          "link": null
+        },
+        {
+          "label": "深度估算方式",
+          "name": "depth_estimator",
+          "type": "COMBO",
+          "widget": {
+            "name": "depth_estimator"
+          },
+          "link": null
+        },
+        {
+          "label": "运动估算方式",
+          "name": "motion_estimator",
+          "type": "COMBO",
+          "widget": {
+            "name": "motion_estimator"
+          },
+          "link": null
+        },
+        {
+          "label": "启用深度推理",
+          "name": "enable_depth_estimation",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "enable_depth_estimation"
+          },
+          "link": null
+        },
+        {
+          "label": "节点侧深度辅助强度",
+          "name": "depth_assist_strength",
+          "type": "FLOAT",
+          "widget": {
+            "name": "depth_assist_strength"
+          },
+          "link": null
+        },
+        {
+          "label": "启用GPU帧生成",
+          "name": "enable_frame_generation",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "enable_frame_generation"
+          },
+          "link": null
+        },
+        {
+          "label": "帧生成倍率",
+          "name": "frame_generation_multiplier",
+          "type": "INT",
+          "widget": {
+            "name": "frame_generation_multiplier"
+          },
+          "link": null
+        },
+        {
+          "label": "原GIF单帧时长（毫秒）",
+          "name": "source_duration_ms",
+          "type": "INT",
+          "widget": {
+            "name": "source_duration_ms"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "处理后图像",
+          "name": "processed_image",
+          "type": "IMAGE",
+          "links": [
+            371
+          ]
+        },
+        {
+          "label": "对比图像",
+          "name": "comparison_image",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "label": "状态",
+          "name": "status",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "label": "单帧时长（毫秒）",
+          "name": "duration_ms_out",
+          "type": "INT",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DLSSNRProcessGIF"
+      },
+      "widgets_values": [
+        "default/dlssnr.dll",
+        "0: NVIDIA GeForce RTX 5070 Ti",
+        "0 Default",
+        false,
+        "0 默认（Default）",
+        1,
+        1,
+        1,
+        1,
+        1,
+        false,
+        true,
+        "0 使用可用引导（深度和运动）",
+        "1 反向深度（Inverted）",
+        1,
+        1,
+        4,
+        true,
+        1,
+        8,
+        6,
+        640,
+        "Depth Anything V2 DirectML GPU（推荐）",
+        "精细 GPU 迭代光流（推荐）",
+        true,
+        1,
+        false,
+        2,
+        100
+      ],
+      "widgets_values_named": {
+        "dll_path": "default/dlssnr.dll",
+        "gpu_device": "0: NVIDIA GeForce RTX 5070 Ti",
+        "nr_preset": "0 Default",
+        "automatic_mask": false,
+        "nr_style": "0 默认（Default）",
+        "nr_intensity": 1,
+        "local_tone_strength": 1,
+        "local_structure_strength": 1,
+        "skin_structure_strength": 1,
+        "scene_paper_white_scale": 1,
+        "ui_correction": false,
+        "color_fix": true,
+        "frame_guidance": "0 使用可用引导（深度和运动）",
+        "depth_convention": "1 反向深度（Inverted）",
+        "motion_scale_x": 1,
+        "motion_scale_y": 1,
+        "depth_inference_interval": 4,
+        "estimate_missing_from_color": true,
+        "motion_strength": 1,
+        "preview_fps": 8,
+        "flow_iterations": 6,
+        "analysis_max_side": 640,
+        "depth_estimator": "Depth Anything V2 DirectML GPU（推荐）",
+        "motion_estimator": "精细 GPU 迭代光流（推荐）",
+        "enable_depth_estimation": true,
+        "depth_assist_strength": 1,
+        "enable_frame_generation": false,
+        "frame_generation_multiplier": 2,
+        "source_duration_ms": 100
+      }
+    }
+  ],
+  "links": [
+    [
+      225,
+      74,
+      0,
+      130,
+      0,
+      "IMAGE"
+    ],
+    [
+      270,
+      132,
+      0,
+      148,
+      0,
+      "IMAGE"
+    ],
+    [
+      272,
+      132,
+      7,
+      150,
+      0,
+      "IMAGE"
+    ],
+    [
+      328,
+      70,
+      0,
+      173,
+      0,
+      "IMAGE"
+    ],
+    [
+      329,
+      173,
+      0,
+      132,
+      0,
+      "IMAGE"
+    ],
+    [
+      332,
+      173,
+      0,
+      72,
+      1,
+      "IMAGE"
+    ],
+    [
+      338,
+      173,
+      0,
+      181,
+      0,
+      "IMAGE"
+    ],
+    [
+      339,
+      132,
+      0,
+      181,
+      1,
+      "IMAGE"
+    ],
+    [
+      340,
+      181,
+      0,
+      72,
+      0,
+      "IMAGE"
+    ],
+    [
+      341,
+      181,
+      0,
+      175,
+      0,
+      "IMAGE"
+    ],
+    [
+      342,
+      181,
+      1,
+      174,
+      0,
+      "IMAGE"
+    ],
+    [
+      370,
+      199,
+      0,
+      200,
+      0,
+      "IMAGE"
+    ],
+    [
+      371,
+      200,
+      0,
+      81,
+      0,
+      "IMAGE"
+    ],
+    [
+      375,
+      74,
+      0,
+      201,
+      0,
+      "IMAGE"
+    ],
+    [
+      377,
+      130,
+      0,
+      201,
+      1,
+      "IMAGE"
+    ],
+    [
+      378,
+      201,
+      1,
+      86,
+      0,
+      "IMAGE"
+    ],
+    [
+      379,
+      201,
+      0,
+      75,
+      0,
+      "IMAGE"
+    ],
+    [
+      380,
+      201,
+      0,
+      76,
+      0,
+      "IMAGE"
+    ],
+    [
+      381,
+      74,
+      0,
+      76,
+      1,
+      "IMAGE"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "图像 单次处理",
+      "bounding": [
+        -9700.912722060837,
+        8198.7556636638,
+        1558.290671676501,
+        1083.3375825038438
+      ],
+      "color": "#3f789e",
+      "flags": {}
+    },
+    {
+      "id": 2,
+      "title": "图像 实时",
+      "bounding": [
+        -12099.30061796828,
+        8107.0051991149985,
+        2141.214557239997,
+        1357.4326864187105
+      ],
+      "color": "#3f789e",
+      "flags": {}
+    },
+    {
+      "id": 3,
+      "title": "GIF",
+      "bounding": [
+        -10714.093352478278,
+        6368.5958577963975,
+        1385.862833219624,
+        1279.774705136605
+      ],
+      "color": "#3f789e",
+      "flags": {}
+    },
+    {
+      "id": 5,
+      "title": "视频 加速",
+      "bounding": [
+        -12108.848690242672,
+        6367.240120762188,
+        1351.5487663455933,
+        1281.1075750631735
+      ],
+      "color": "#3f789e",
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.24304420967399396,
+      "offset": [
+        14514.265678412665,
+        -5923.305991813899
+      ]
+    },
+    "qgn_navigation_groups": [],
+    "qgn_locked": false,
+    "frontendVersion": "1.49.6",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}

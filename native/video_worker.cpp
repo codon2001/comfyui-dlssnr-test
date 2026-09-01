@@ -236,7 +236,7 @@ int wmain(int argc, wchar_t** argv) {
                                       &limits, sizeof(limits));
     const std::wstring decoderCommand = Quote(ffmpeg) +
         L" -hide_banner -loglevel error -hwaccel cuda -i " + Quote(input) +
-        L" -map 0:v:0 -an -sn -dn -f rawvideo -pix_fmt rgba pipe:1";
+        L" -map 0:v:0 -an -sn -dn -fps_mode passthrough -f rawvideo -pix_fmt rgba pipe:1";
     const std::wstring encoderCommand = Quote(ffmpeg) +
         L" -hide_banner -loglevel error -f rawvideo -pix_fmt rgba -s " +
         std::to_wstring(width) + L"x" + std::to_wstring(height) +

@@ -571,6 +571,12 @@ struct Session {
         hr = queue12->Signal(fence12, outputReady);
         if (SUCCEEDED(hr)) hr = context11->Wait(fence11, outputReady);
         if (FAILED(hr)) { error = HResultText("Synchronize GPU texture output", hr); return false; }
+        // ID3D11DeviceContext4::Wait only appends a GPU-side wait to the
+        // immediate-context command stream.  Submit it now: otherwise the
+        // following video-processor/encoder work can observe the previous
+        // contents of output11 for an isolated frame, which appears as a
+        // periodic flash in the encoded video.
+        context11->Flush();
         // The caller reuses the shared input/output textures on the next
         // frame.  A D3D11 Wait only queues a GPU-side dependency; wait for the
         // fence on the CPU here so decoder surfaces and temporal history are

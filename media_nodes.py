@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import queue
@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import threading
 import time
+from fractions import Fraction
 from pathlib import Path
 
 import numpy as np
@@ -19,7 +20,9 @@ from .nodes import (
     Bridge,
     Settings,
     _apply_depth_assist,
+    _apply_depth_assist_weight,
     _comparison_rgba,
+    _depth_assist_weight,
     _depth_frame,
     _event_for,
     _motion_frame,
@@ -42,6 +45,22 @@ def _style(value) -> int:
 
 def _guidance(value) -> int:
     return int(str(value).split()[0])
+
+
+def _exact_video_rate(source: Path, fallback_fps: float) -> tuple[int, int]:
+    """Return the source average frame rate as an exact rational when possible."""
+    try:
+        import av
+        with av.open(str(source)) as container:
+            stream = container.streams.video[0]
+            rate = stream.average_rate or stream.base_rate
+            if rate and rate.numerator > 0 and rate.denominator > 0:
+                return int(rate.numerator), int(rate.denominator)
+    except (ImportError, OSError, ValueError, IndexError):
+        pass
+    value = fallback_fps if fallback_fps > 0.01 else 30.0
+    rate = Fraction(str(value)).limit_denominator(1_000_000)
+    return max(1, int(rate.numerator)), max(1, int(rate.denominator))
 
 
 def _settings(style, intensity, tone, structure, automatic_mask,
@@ -269,8 +288,9 @@ class DLSSNRImageDirect:
                 "skin_structure_strength": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 2.0, "step": 0.05}),
                 "scene_paper_white_scale": ("FLOAT", {"default": 1.0, "min": 0.25, "max": 4.0, "step": 0.05, "display": "slider"}),
                 "ui_correction": ("BOOLEAN", {"default": False}),
-                "frame_guidance": (["0 使用可用引导（深度和运动）", "1 强制零引导", "2 仅运动向量", "3 仅深度"],),
-                "depth_convention": (["1 反向深度（Inverted）", "0 正常深度（Normal）"],),
+                "color_fix": ("BOOLEAN", {"default": False, "tooltip": "打开后才执行色彩修复。"}),
+                "frame_guidance": (["0 使用可用引导（深度和运动）", "1 强制零引导", "2 仅运动向量", "3 仅深度", "1 反向深度（Inverted）", "0 正常深度（Normal）"],),
+                "depth_convention": ("STRING", {"default": "1 反向深度（Inverted）"}),
                 "motion_scale_x": ("FLOAT", {"default": 1.0, "min": -4.0, "max": 4.0, "step": 0.05}),
                 "motion_scale_y": ("FLOAT", {"default": 1.0, "min": -4.0, "max": 4.0, "step": 0.05}),
                 "estimate_missing_from_color": ("BOOLEAN", {"default": False}),
@@ -308,7 +328,7 @@ class DLSSNRImageDirect:
     def run(self, image, dll_path, gpu_device, nr_preset,
             automatic_mask, nr_style, nr_intensity,
             local_tone_strength, local_structure_strength,
-            skin_structure_strength, scene_paper_white_scale, ui_correction, frame_guidance,
+            skin_structure_strength, scene_paper_white_scale, ui_correction, color_fix, frame_guidance,
             depth_convention, motion_scale_x, motion_scale_y,
             estimate_missing_from_color,
             depth_estimator="Depth Anything V2 DirectML GPU（推荐）",
@@ -359,7 +379,10 @@ class DLSSNRImageDirect:
                           if batch == 1 else 1)
                 processed = None
                 for pass_index in range(passes):
-                    settings.reset = 1 if index == 0 and pass_index == 0 else 0
+                    # The image node treats a ComfyUI batch as independent
+                    # pictures.  Animation history belongs to the GIF node;
+                    # carrying it between unrelated images causes ghosting.
+                    settings.reset = 1 if pass_index == 0 else 0
                     raw_processed = bridge.process(
                         rgba, settings, depth_np, motion_np)
                     # Intermediate warm-up results are never returned or fed
@@ -368,7 +391,8 @@ class DLSSNRImageDirect:
                     if pass_index == passes - 1:
                         processed = _apply_depth_assist(
                             rgba, raw_processed, depth_np, depth_assist_strength)
-                        processed = _restore_source_color(rgba, processed)
+                        if color_fix:
+                            processed = _restore_source_color(rgba, processed)
                     _check_interrupt()
                 comparison = _comparison_rgba(rgba, processed)
                 last_comparison = comparison
@@ -408,8 +432,9 @@ class DLSSNRImageDirectLegacy:
                 "skin_structure_strength": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 2.0, "step": 0.05}),
                 "scene_paper_white_scale": ("FLOAT", {"default": 1.0, "min": 0.25, "max": 4.0, "step": 0.05, "display": "slider"}),
                 "ui_correction": ("BOOLEAN", {"default": False}),
-                "frame_guidance": (["0 使用可用引导（深度和运动）", "1 强制零引导", "2 仅运动向量", "3 仅深度"],),
-                "depth_convention": (["1 反向深度（Inverted）", "0 正常深度（Normal）"],),
+                "color_fix": ("BOOLEAN", {"default": False, "tooltip": "打开后才执行色彩修复。"}),
+                "frame_guidance": (["0 使用可用引导（深度和运动）", "1 强制零引导", "2 仅运动向量", "3 仅深度", "1 反向深度（Inverted）", "0 正常深度（Normal）"],),
+                "depth_convention": ("STRING", {"default": "1 反向深度（Inverted）"}),
                 "motion_scale_x": ("FLOAT", {"default": 1.0, "min": -4.0, "max": 4.0, "step": 0.05}),
                 "motion_scale_y": ("FLOAT", {"default": 1.0, "min": -4.0, "max": 4.0, "step": 0.05}),
                 "estimate_missing_from_color": ("BOOLEAN", {"default": False}),
@@ -444,7 +469,7 @@ class DLSSNRImageDirectLegacy:
 
     def run(self, image, dll_path, gpu_device, automatic_mask, nr_style, nr_intensity,
             local_tone_strength, local_structure_strength,
-            skin_structure_strength, scene_paper_white_scale, ui_correction, frame_guidance,
+            skin_structure_strength, scene_paper_white_scale, ui_correction, color_fix, frame_guidance,
             depth_convention, motion_scale_x, motion_scale_y,
             estimate_missing_from_color,
             depth_estimator="Depth Anything V2 DirectML GPU（推荐）",
@@ -486,9 +511,10 @@ class DLSSNRImageDirectLegacy:
                         depth_np = estimated_depth
                     if want_motion and motion_np is None:
                         motion_np = estimated_motion
-                settings.reset = 1 if index == 0 else 0
+                settings.reset = 1
                 processed = bridge.process(rgba, settings, depth_np, motion_np)
-                processed = _restore_source_color(rgba, processed)
+                if color_fix:
+                    processed = _restore_source_color(rgba, processed)
                 comparison = _comparison_rgba(rgba, processed)
                 last_comparison = comparison
                 processed_results.append(_tensor_rgb(processed))
@@ -523,14 +549,17 @@ class DLSSNRProcessGIF:
                 "skin_structure_strength": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 2.0, "step": 0.05}),
                 "scene_paper_white_scale": ("FLOAT", {"default": 1.0, "min": 0.25, "max": 4.0, "step": 0.05, "display": "slider"}),
                 "ui_correction": ("BOOLEAN", {"default": False}),
-                "frame_guidance": (["0 使用可用引导（深度和运动）", "1 强制零引导", "2 仅运动向量", "3 仅深度"],),
-                "depth_convention": (["1 反向深度（Inverted）", "0 正常深度（Normal）"],),
+                "color_fix": ("BOOLEAN", {"default": False, "tooltip": "打开后才执行色彩修复。"}),
+                "frame_guidance": (["0 使用可用引导（深度和运动）", "1 强制零引导", "2 仅运动向量", "3 仅深度", "1 反向深度（Inverted）", "0 正常深度（Normal）"],),
+                "depth_convention": ("STRING", {"default": "1 反向深度（Inverted）"}),
                 "motion_scale_x": ("FLOAT", {"default": 1.0, "min": -4.0, "max": 4.0, "step": 0.05}),
                 "motion_scale_y": ("FLOAT", {"default": 1.0, "min": -4.0, "max": 4.0, "step": 0.05}),
                 "depth_inference_interval": ("INT", {"default": 4, "min": 1, "max": 64, "step": 1}),
                 "estimate_missing_from_color": ("BOOLEAN", {"default": True}),
                 "motion_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 8.0, "step": 0.05}),
                 "preview_fps": ("INT", {"default": 8, "min": 1, "max": 30, "step": 1}),
+                "flow_iterations": ("INT", {"default": 6, "min": 1, "max": 24, "step": 1}),
+                "analysis_max_side": ("INT", {"default": 640, "min": 256, "max": 2048, "step": 64}),
                 "depth_estimator": ([
                     "Depth Anything V2 DirectML GPU（推荐）",
                     "轻量颜色深度（快速）",
@@ -567,10 +596,10 @@ class DLSSNRProcessGIF:
     def run(self, image, dll_path, gpu_device, nr_preset,
             automatic_mask, nr_style, nr_intensity,
             local_tone_strength, local_structure_strength,
-            skin_structure_strength, scene_paper_white_scale, ui_correction, frame_guidance,
+            skin_structure_strength, scene_paper_white_scale, ui_correction, color_fix, frame_guidance,
             depth_convention, motion_scale_x, motion_scale_y,
             depth_inference_interval, estimate_missing_from_color,
-            motion_strength, preview_fps,
+            motion_strength, preview_fps, flow_iterations=6, analysis_max_side=640,
             depth_estimator="Depth Anything V2 DirectML GPU（推荐）",
             motion_estimator="精细 GPU 迭代光流（推荐）",
             enable_depth_estimation=True,
@@ -595,6 +624,8 @@ class DLSSNRProcessGIF:
         last_preview = 0.0
         estimator_device = "unused"
         estimated_depth_cache = None
+        depth_weight_cache = None
+        depth_weight_key = None
         previous_processed = None
         previous_comparison = None
         selected_gpu = gpu_index(gpu_device)
@@ -621,7 +652,8 @@ class DLSSNRProcessGIF:
                                         enable_depth_estimation else "关闭深度估算")
                     estimated_depth, estimated_motion, _mask, _exposure, estimator_device = \
                         estimate_color_guidance(previous, rgba[..., :3], motion_strength,
-                                                1.0, 12, 960, selected_gpu,
+                                                1.0, flow_iterations,
+                                                analysis_max_side, selected_gpu,
                                                 frame_depth_mode, motion_estimator)
                     if infer_depth_now:
                         estimated_depth_cache = estimated_depth
@@ -632,9 +664,24 @@ class DLSSNRProcessGIF:
                     if enable_frame_generation and generation_motion is None:
                         generation_motion = estimated_motion
                 settings.reset = 1 if index == 0 else 0
-                processed = _process_dlssnr(
-                    bridge, rgba, settings, depth_np, motion_np,
-                    depth_assist_strength)
+                if depth is not None:
+                    source_index = min(
+                        (index // max(1, int(depth_inference_interval))) *
+                        max(1, int(depth_inference_interval)), depth.shape[0] - 1)
+                    current_depth_key = ("input", int(source_index),
+                                         float(depth_assist_strength))
+                else:
+                    current_depth_key = ("estimated", id(depth_np),
+                                         float(depth_assist_strength))
+                if current_depth_key != depth_weight_key:
+                    depth_weight_cache = _depth_assist_weight(
+                        depth_np, depth_assist_strength)
+                    depth_weight_key = current_depth_key
+                processed = bridge.process(rgba, settings, depth_np, motion_np)
+                processed = _apply_depth_assist_weight(
+                    rgba, processed, depth_weight_cache)
+                if color_fix:
+                    processed = _restore_source_color(rgba, processed)
                 last_comparison = _comparison_rgba(rgba, processed)
                 if enable_frame_generation and previous_processed is not None:
                     processed_generated = _generate_between(
@@ -767,16 +814,29 @@ def _has_nvenc(ffmpeg: str) -> bool:
 
 
 def _mux_audio(ffmpeg: str | None, source: Path, video_only: Path,
-               output: Path, preserve_audio: bool) -> bool:
+               output: Path, preserve_audio: bool,
+               fps_num: int | None = None, fps_den: int | None = None) -> bool:
+    rate_args = ()
+    if fps_num and fps_den:
+        rate_args = ("-r", f"{int(fps_num)}/{int(fps_den)}",
+                     "-video_track_timescale", str(int(fps_num)))
     if preserve_audio and ffmpeg:
         for audio_args in (("-c:a", "copy"), ("-c:a", "aac", "-b:a", "192k")):
             command = (ffmpeg, "-y", "-loglevel", "error", "-i", str(video_only),
                        "-i", str(source), "-map", "0:v:0", "-map", "1:a?",
-                       "-c:v", "copy", *audio_args, "-shortest", str(output))
+                       "-c:v", "copy", *rate_args, *audio_args,
+                       "-shortest", str(output))
             result = subprocess.run(command, capture_output=True, text=True)
             if result.returncode == 0 and output.is_file():
                 video_only.unlink(missing_ok=True)
                 return True
+    if ffmpeg and rate_args:
+        command = (ffmpeg, "-y", "-loglevel", "error", "-i", str(video_only),
+                   "-map", "0:v:0", "-c:v", "copy", *rate_args, str(output))
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode == 0 and output.is_file():
+            video_only.unlink(missing_ok=True)
+            return False
     os.replace(video_only, output)
     return False
 
@@ -906,186 +966,6 @@ class _StreamDecoder:
             self.process = None
 
 
-class DLSSNRNativeVideo:
-    @classmethod
-    def INPUT_TYPES(cls):
-        gif_inputs = DLSSNRProcessGIF.INPUT_TYPES()
-        required = dict(gif_inputs["required"])
-        required.pop("image")
-        required.pop("source_duration_ms", None)
-        # 旧原生视频节点保持 TEST3 的接口与直通处理路径。
-        required.pop("nr_preset", None)
-        required.pop("depth_assist_strength", None)
-        required["frame_storage"] = (["GPU显存（VRAM）", "CPU内存（RAM）"],)
-        required["max_frames"] = ("INT", {
-            "default": 600, "min": 1, "max": 100000, "step": 1,
-            "tooltip": "原生 VIDEO 接口会一次解码完整视频；超过此帧数时停止并提示改用流式节点。",
-        })
-        return {
-            "required": {"video": ("VIDEO",), **required},
-            "optional": dict(gif_inputs.get("optional", {})),
-            "hidden": {"unique_id": "UNIQUE_ID"},
-        }
-
-    RETURN_TYPES = ("VIDEO", "STRING")
-    RETURN_NAMES = ("processed_video", "status")
-    FUNCTION = "run"
-    CATEGORY = "image/DLSSNR Live/Video"
-    OUTPUT_NODE = True
-
-    @classmethod
-    def IS_CHANGED(cls, **_):
-        return float("nan")
-
-    def run(self, video, dll_path, gpu_device, automatic_mask, nr_style, nr_intensity,
-            local_tone_strength, local_structure_strength,
-            skin_structure_strength, scene_paper_white_scale, ui_correction, frame_guidance,
-            depth_convention, motion_scale_x, motion_scale_y,
-            depth_inference_interval, estimate_missing_from_color,
-            motion_strength, preview_fps,
-            depth_estimator="Depth Anything V2 DirectML GPU（推荐）",
-            motion_estimator="精细 GPU 迭代光流（推荐）",
-            enable_depth_estimation=True,
-            enable_frame_generation=False, frame_generation_multiplier=2,
-            frame_storage="GPU显存（VRAM）", max_frames=600,
-            unique_id=None, depth=None, motion_vectors=None):
-        frame_count_fn = getattr(video, "get_frame_count", None)
-        if callable(frame_count_fn):
-            count = int(frame_count_fn())
-            if count > int(max_frames):
-                source_fn = getattr(video, "get_stream_source", None)
-                source_value = source_fn() if callable(source_fn) else None
-                if isinstance(source_value, (str, os.PathLike)):
-                    ffmpeg = _find_ffmpeg()
-                    encoder_mode = ("NVIDIA NVENC（GPU编码）"
-                                    if ffmpeg and _has_nvenc(ffmpeg)
-                                    else "CPU mp4v（CPU编码）")
-                    fallback_guidance = (frame_guidance if estimate_missing_from_color
-                                         else "1 强制零引导")
-                    streamed = DLSSNRStreamVideo().run(
-                        video_path="", output_path="", dll_path=dll_path,
-                        gpu_device=gpu_device, encoder=encoder_mode,
-                        processing_mode="最高速度处理", preserve_audio=True,
-                        automatic_mask=automatic_mask, nr_style=nr_style,
-                        nr_intensity=nr_intensity,
-                        local_tone_strength=local_tone_strength,
-                        local_structure_strength=local_structure_strength,
-                        skin_structure_strength=skin_structure_strength,
-                        scene_paper_white_scale=scene_paper_white_scale,
-                        ui_correction=ui_correction,
-                        frame_guidance=fallback_guidance,
-                        depth_convention=depth_convention,
-                        motion_scale_x=motion_scale_x, motion_scale_y=motion_scale_y,
-                        motion_strength=motion_strength, depth_strength=1.0,
-                        flow_iterations=12, analysis_max_side=960,
-                        preview_fps=preview_fps,
-                        depth_inference_interval=depth_inference_interval,
-                        depth_estimator=depth_estimator,
-                        motion_estimator=motion_estimator,
-                        enable_depth_estimation=enable_depth_estimation,
-                        enable_frame_generation=enable_frame_generation,
-                        frame_generation_multiplier=frame_generation_multiplier,
-                        unique_id=unique_id, video=video,
-                        speed_multiplier=0.0,
-                    )
-                    return (streamed[0],
-                            f"长视频已自动切换为逐帧低内存处理。{streamed[2]}")
-                raise RuntimeError(
-                    f"视频约有 {count} 帧，超过原生 VIDEO 节点上限 {max_frames}。"
-                    "该 VIDEO 没有可流式读取的文件源，无法安全自动降级；"
-                    "请使用文件型 VIDEO，或提高上限（可能耗尽内存/显存）。")
-        components = video.get_components()
-        image = components.images
-        batch, height, width, _ = image.shape
-        if batch > int(max_frames):
-            raise RuntimeError(
-                f"视频已解码 {batch} 帧，超过上限 {max_frames}。请改用低内存流式视频节点。")
-        storage = (torch.device("cuda") if str(frame_storage).startswith("GPU")
-                   and torch.cuda.is_available() else torch.device("cpu"))
-        guidance = _guidance(frame_guidance)
-        settings = _settings(
-            nr_style, nr_intensity, local_tone_strength,
-            local_structure_strength, automatic_mask, skin_structure_strength,
-            ui_correction, int(str(depth_convention).split()[0]),
-            motion_scale_x, motion_scale_y, scene_paper_white_scale)
-        processed_results = []
-        previous = None
-        last_comparison = None
-        started = time.perf_counter()
-        last_preview = 0.0
-        estimator_device = "unused"
-        estimated_depth_cache = None
-        previous_processed = None
-        selected_gpu = gpu_index(gpu_device)
-        with Bridge(dll_path, width, height, selected_gpu) as bridge:
-            for index in range(batch):
-                rgba = _rgba8(image[index])
-                want_depth = guidance in (0, 3)
-                want_motion = guidance in (0, 2)
-                depth_np = (_depth_frame(depth, index, depth_inference_interval,
-                                         height, width) if want_depth else None)
-                motion_np = (_motion_frame(motion_vectors, index, height, width)
-                             if want_motion else None)
-                generation_motion = motion_np
-                if ((estimate_missing_from_color and
-                     ((want_depth and depth_np is None) or
-                      (want_motion and motion_np is None))) or
-                    (enable_frame_generation and generation_motion is None)):
-                    infer_depth_now = (estimate_missing_from_color and
-                                       want_depth and depth_np is None and
-                                       (estimated_depth_cache is None or
-                                        index % max(1, int(depth_inference_interval)) == 0))
-                    frame_depth_mode = (depth_estimator if infer_depth_now and
-                                        enable_depth_estimation else "关闭深度估算")
-                    estimated_depth, estimated_motion, _mask, _exposure, estimator_device = \
-                        estimate_color_guidance(previous, rgba[..., :3], motion_strength,
-                                                1.0, 12, 960, selected_gpu,
-                                                frame_depth_mode, motion_estimator)
-                    if infer_depth_now:
-                        estimated_depth_cache = estimated_depth
-                    if want_depth and depth_np is None:
-                        depth_np = estimated_depth_cache
-                    if estimate_missing_from_color and want_motion and motion_np is None:
-                        motion_np = estimated_motion
-                    if enable_frame_generation and generation_motion is None:
-                        generation_motion = estimated_motion
-                settings.reset = 1 if index == 0 else 0
-                processed = bridge.process(rgba, settings, depth_np, motion_np)
-                last_comparison = _comparison_rgba(rgba, processed)
-                if enable_frame_generation and previous_processed is not None:
-                    generated = _generate_between(
-                        previous_processed, processed[..., :3], generation_motion,
-                        frame_generation_multiplier, selected_gpu)
-                    processed_results.extend(_tensor_rgb(frame, storage) for frame in generated)
-                processed_results.append(_tensor_rgb(processed, storage))
-                previous_processed = processed[..., :3].copy()
-                previous = rgba[..., :3].copy()
-                now = time.perf_counter()
-                if now - last_preview >= 1.0 / preview_fps:
-                    _preview(str(unique_id), last_comparison, index + 1,
-                             (index + 1) / max(now - started, 1e-6), bridge.runtime_hash)
-                    last_preview = now
-                _check_interrupt()
-            runtime_hash = bridge.runtime_hash
-        images = torch.stack(processed_results)
-        try:
-            from comfy_api.latest import InputImpl, Types
-        except ImportError:
-            from comfy_api.v0_0_2 import InputImpl, Types
-        video_components = Types.VideoComponents(
-            images=images,
-            audio=getattr(components, "audio", None),
-            frame_rate=(components.frame_rate * int(frame_generation_multiplier)
-                        if enable_frame_generation else components.frame_rate),
-        )
-        output_video = InputImpl.VideoFromComponents(video_components)
-        elapsed = time.perf_counter() - started
-        _preview(str(unique_id), last_comparison, batch,
-                 batch / max(elapsed, 1e-6), runtime_hash, "stopped")
-        status = (f"完成：输入 {batch} 帧，输出 {len(processed_results)} 帧，"
-                  f"缓存={storage.type.upper()}，"
-                  f"颜色估算={estimator_device.upper()}，DLL SHA256={runtime_hash}")
-        return (output_video, status)
 
 
 class DLSSNRStreamVideo:
@@ -1107,8 +987,9 @@ class DLSSNRStreamVideo:
             "skin_structure_strength": ("FLOAT", {"default": 1.0, "min": -1.0, "max": 2.0, "step": 0.05}),
             "scene_paper_white_scale": ("FLOAT", {"default": 1.0, "min": 0.25, "max": 4.0, "step": 0.05, "display": "slider"}),
             "ui_correction": ("BOOLEAN", {"default": False}),
+            "color_fix": ("BOOLEAN", {"default": False, "tooltip": "打开后才执行色彩修复；关闭时保留 DLSSNR 原始色调。"}),
             "frame_guidance": (["1 零引导极速（视频推荐）", "0 从RGB估算深度和运动", "2 仅从RGB估算运动", "3 仅从RGB估算深度"],),
-            "depth_convention": (["1 反向深度（Inverted）", "0 正常深度（Normal）"],),
+            "depth_convention": ("STRING", {"default": "1 反向深度（Inverted）"}),
             "motion_scale_x": ("FLOAT", {"default": 1.0, "min": -4.0, "max": 4.0, "step": 0.05}),
             "motion_scale_y": ("FLOAT", {"default": 1.0, "min": -4.0, "max": 4.0, "step": 0.05}),
             "motion_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 8.0, "step": 0.05}),
@@ -1148,6 +1029,7 @@ class DLSSNRStreamVideo:
             processing_mode, preserve_audio,
             automatic_mask, nr_style, nr_intensity, local_tone_strength,
             local_structure_strength, skin_structure_strength, scene_paper_white_scale, ui_correction,
+            color_fix,
             frame_guidance, depth_convention, motion_scale_x, motion_scale_y,
             motion_strength,
             depth_strength, flow_iterations, analysis_max_side, preview_fps,
@@ -1158,6 +1040,37 @@ class DLSSNRStreamVideo:
             enable_frame_generation=False, frame_generation_multiplier=2,
             decoder="NVIDIA NVDEC（GPU解码）",
             unique_id=None, video=None, speed_multiplier=0.0):
+        native_eligible = (
+            not getattr(self, "_force_compatible_pipeline", False) and
+            str(encoder).startswith("NVIDIA") and
+            str(decoder).startswith("NVIDIA") and
+            not bool(enable_frame_generation)
+        )
+        if native_eligible:
+            guidance_value = _guidance(frame_guidance)
+            if (not bool(enable_depth_estimation) or
+                    str(depth_estimator).startswith("关闭")):
+                guidance_value = {0: 2, 3: 1}.get(guidance_value, guidance_value)
+            if str(motion_estimator).startswith("关闭"):
+                guidance_value = {0: 3, 2: 1}.get(guidance_value, guidance_value)
+            native_speed = (1.0 if str(processing_mode).startswith("实时")
+                            else max(0.0, float(speed_multiplier)))
+            return DLSSNRRealtimeStreamVideo().run(
+                video_path=video_path, output_path=output_path,
+                dll_path=dll_path, gpu_device=gpu_device, nr_preset="0 Default",
+                preserve_audio=preserve_audio, automatic_mask=automatic_mask,
+                nr_style=nr_style, nr_intensity=nr_intensity,
+                local_tone_strength=local_tone_strength,
+                local_structure_strength=local_structure_strength,
+                skin_structure_strength=skin_structure_strength,
+                scene_paper_white_scale=scene_paper_white_scale,
+                ui_correction=ui_correction, frame_guidance=str(guidance_value),
+                motion_strength=motion_strength, depth_strength=depth_strength,
+                depth_convention=depth_convention,
+                motion_scale_x=motion_scale_x, motion_scale_y=motion_scale_y,
+                color_fix=color_fix, unique_id=unique_id, video=video,
+                speed_multiplier=native_speed,
+            )
         try:
             import cv2
         except ImportError as exc:
@@ -1252,6 +1165,8 @@ class DLSSNRStreamVideo:
                     settings.reset = 1 if count == 0 else 0
                     stage = time.perf_counter()
                     processed = bridge.process(rgba, settings, depth_np, motion_np)
+                    if color_fix:
+                        processed = _restore_source_color(rgba, processed)
                     dlss_seconds += time.perf_counter() - stage
                     last_processed = processed
                     last_comparison = _comparison_rgba(rgba, processed)
@@ -1331,17 +1246,31 @@ class DLSSNRStreamVideo:
             _remove_event(str(unique_id))
 
 
-class DLSSNRFastVideo(DLSSNRStreamVideo):
-    """Process/record frames as fast as possible, then preserve source timing."""
+
+
+
+
+class DLSSNRFastVideoNativeV16(DLSSNRStreamVideo):
+    """V1.6 native GPU texture pipeline with exact source frame rate."""
 
     @classmethod
     def INPUT_TYPES(cls):
         inputs = DLSSNRStreamVideo.INPUT_TYPES()
         required = dict(inputs["required"])
         required.pop("processing_mode", None)
+        required.pop("encoder", None)
+        required.pop("decoder", None)
+        required["depth_estimator"] = ([
+            "原生 D3D11 GPU 深度（高速推荐）",
+            "关闭深度估算",
+        ],)
+        required["motion_estimator"] = ([
+            "原生 D3D11 GPU 运动（高速推荐）",
+            "关闭运动估算",
+        ],)
         required["playback_speed"] = ("FLOAT", {
-            "default": 2.0, "min": 0.0, "max": 64.0, "step": 0.25,
-            "tooltip": "最高等效播放倍率；1=实时，2=两倍速，0=不限速。不会跳帧。",
+            "default": 0.0, "min": 0.0, "max": 64.0, "step": 0.25,
+            "tooltip": "0=不限速；1=按源帧率；其他数值为最高处理倍率。不会改变输出帧率。",
         })
         return {
             "required": required,
@@ -1350,102 +1279,38 @@ class DLSSNRFastVideo(DLSSNRStreamVideo):
         }
 
     def run(self, **kwargs):
-        playback_speed = float(kwargs.pop("playback_speed", 2.0))
-        use_native_worker = (
-            str(kwargs.get("encoder", "")).startswith("NVIDIA") and
-            str(kwargs.get("decoder", "")).startswith("NVIDIA") and
-            _guidance(kwargs.get("frame_guidance", "1")) == 1 and
-            not bool(kwargs.get("enable_frame_generation", False))
+        playback_speed = float(kwargs.pop("playback_speed", 0.0))
+        guidance_value = _guidance(kwargs.get("frame_guidance", "1"))
+        if (not bool(kwargs.get("enable_depth_estimation", True)) or
+                str(kwargs.get("depth_estimator", "")).startswith("关闭")):
+            guidance_value = {0: 2, 3: 1}.get(guidance_value, guidance_value)
+        if str(kwargs.get("motion_estimator", "")).startswith("关闭"):
+            guidance_value = {0: 3, 2: 1}.get(guidance_value, guidance_value)
+        return DLSSNRRealtimeStreamVideo().run(
+            video_path=kwargs.get("video_path", ""),
+            output_path=kwargs.get("output_path", ""),
+            dll_path=kwargs["dll_path"], gpu_device=kwargs["gpu_device"],
+            nr_preset="0 Default", preserve_audio=kwargs.get("preserve_audio", True),
+            automatic_mask=kwargs.get("automatic_mask", False),
+            nr_style=kwargs.get("nr_style", "0 默认（Default）"),
+            nr_intensity=kwargs.get("nr_intensity", 1.0),
+            local_tone_strength=kwargs.get("local_tone_strength", 1.0),
+            local_structure_strength=kwargs.get("local_structure_strength", 1.0),
+            skin_structure_strength=kwargs.get("skin_structure_strength", 1.0),
+            scene_paper_white_scale=kwargs.get("scene_paper_white_scale", 1.0),
+            ui_correction=kwargs.get("ui_correction", False),
+            frame_guidance=str(guidance_value),
+            motion_strength=kwargs.get("motion_strength", 1.0),
+            depth_strength=kwargs.get("depth_strength", 1.0),
+            depth_convention=kwargs.get("depth_convention", "1 反向深度（Inverted）"),
+            motion_scale_x=kwargs.get("motion_scale_x", 1.0),
+            motion_scale_y=kwargs.get("motion_scale_y", 1.0),
+            color_fix=kwargs.get("color_fix", False),
+            unique_id=kwargs.get("unique_id"), video=kwargs.get("video"),
+            speed_multiplier=playback_speed,
         )
-        if use_native_worker:
-            return DLSSNRRealtimeStreamVideo().run(
-                video_path=kwargs.get("video_path", ""),
-                output_path=kwargs.get("output_path", ""),
-                dll_path=kwargs["dll_path"],
-                gpu_device=kwargs["gpu_device"],
-                nr_preset="0 Default",
-                preserve_audio=kwargs.get("preserve_audio", True),
-                automatic_mask=kwargs.get("automatic_mask", False),
-                nr_style=kwargs.get("nr_style", "0 默认（Default）"),
-                nr_intensity=kwargs.get("nr_intensity", 1.0),
-                local_tone_strength=kwargs.get("local_tone_strength", 1.0),
-                local_structure_strength=kwargs.get("local_structure_strength", 1.0),
-                skin_structure_strength=kwargs.get("skin_structure_strength", 1.0),
-                scene_paper_white_scale=kwargs.get("scene_paper_white_scale", 1.0),
-                ui_correction=kwargs.get("ui_correction", False),
-                unique_id=kwargs.get("unique_id"), video=kwargs.get("video"),
-                speed_multiplier=playback_speed,
-            )
-        kwargs["processing_mode"] = "最高速度处理"
-        kwargs["speed_multiplier"] = playback_speed
-        return super().run(**kwargs)
 
 
-class DLSSNRFastVideoLegacy(DLSSNRStreamVideo):
-    """TEST2-compatible high-speed path using OpenCV decode and NVENC."""
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        inputs = DLSSNRStreamVideo.INPUT_TYPES()
-        required = dict(inputs["required"])
-        for name in (
-                "processing_mode", "decoder", "depth_inference_interval",
-                "depth_estimator", "motion_estimator", "enable_depth_estimation",
-                "enable_frame_generation", "frame_generation_multiplier"):
-            required.pop(name, None)
-        required["frame_guidance"] = ([
-            "0 从RGB估算深度和运动", "1 强制零引导",
-            "2 仅从RGB估算运动", "3 仅从RGB估算深度"],)
-        required["playback_speed"] = ("FLOAT", {
-            "default": 2.0, "min": 0.0, "max": 64.0, "step": 0.25,
-            "tooltip": "TEST2 处理倍率；1=实时，2=两倍速，0=不限速。不会跳帧。",
-        })
-        return {
-            "required": required,
-            "optional": dict(inputs.get("optional", {})),
-            "hidden": dict(inputs.get("hidden", {})),
-        }
-
-    def run(self, **kwargs):
-        playback_speed = float(kwargs.pop("playback_speed", 2.0))
-        kwargs.update({
-            "processing_mode": "最高速度处理",
-            "decoder": "OpenCV（CPU兼容解码）",
-            "depth_inference_interval": 1,
-            "depth_estimator": "轻量颜色深度（快速）",
-            "motion_estimator": "精细 GPU 迭代光流",
-            "enable_depth_estimation": True,
-            "enable_frame_generation": False,
-            "frame_generation_multiplier": 2,
-            "speed_multiplier": playback_speed,
-        })
-        result = DLSSNRStreamVideo.run(self, **kwargs)
-        return (result[0], result[1], f"TEST2 旧版路径：{result[2]}")
-
-
-def _generate_image_batch(images, gpu_device, multiplier, motion_estimator,
-                          motion_strength, flow_iterations, analysis_max_side):
-    frames = images.detach().float().cpu().clamp(0, 1).numpy()[..., :3]
-    if len(frames) == 0:
-        raise RuntimeError("没有可用于帧生成的图像。")
-    selected_gpu = gpu_index(gpu_device)
-    output = []
-    previous = None
-    previous_u8 = None
-    device_status = "unused"
-    for frame in frames:
-        current = np.ascontiguousarray(frame * 255.0 + 0.5, dtype=np.uint8)
-        if previous_u8 is not None:
-            _depth, motion, _mask, _exposure, device_status = estimate_color_guidance(
-                previous, current, motion_strength, 0.0, flow_iterations,
-                analysis_max_side, selected_gpu, "关闭深度估算", motion_estimator)
-            output.extend(_tensor_rgb(item) for item in _generate_between(
-                previous_u8, current, motion, multiplier, selected_gpu))
-        output.append(_tensor_rgb(current))
-        previous = current
-        previous_u8 = current
-        _check_interrupt()
-    return torch.stack(output).to(images.device), device_status
 
 
 class DLSSNRFrameGenerateImages:
@@ -1479,181 +1344,8 @@ class DLSSNRFrameGenerateImages:
                 f"倍率={frame_generation_multiplier}x，估算={device_status}。")
 
 
-class DLSSNRFrameGenerateVideo:
-    @classmethod
-    def INPUT_TYPES(cls):
-        inputs = DLSSNRFrameGenerateImages.INPUT_TYPES()["required"]
-        required = dict(inputs)
-        required.pop("images")
-        required.pop("duration_ms")
-        return {"required": {"video": ("VIDEO",), **required}}
-
-    RETURN_TYPES = ("VIDEO", "STRING")
-    RETURN_NAMES = ("generated_video", "status")
-    FUNCTION = "run"
-    CATEGORY = "image/DLSSNR Live/Frame Generation"
-
-    def run(self, video, gpu_device, frame_generation_multiplier, motion_estimator,
-            motion_strength, flow_iterations, analysis_max_side):
-        components = video.get_components()
-        generated, device_status = _generate_image_batch(
-            components.images, gpu_device, frame_generation_multiplier,
-            motion_estimator, motion_strength, flow_iterations, analysis_max_side)
-        try:
-            from comfy_api.latest import InputImpl, Types
-        except ImportError:
-            from comfy_api.v0_0_2 import InputImpl, Types
-        result = InputImpl.VideoFromComponents(Types.VideoComponents(
-            images=generated, audio=getattr(components, "audio", None),
-            frame_rate=components.frame_rate * int(frame_generation_multiplier)))
-        return (result,
-                f"GPU光流帧生成完成：输入 {len(components.images)} 帧，"
-                f"输出 {len(generated)} 帧，倍率={frame_generation_multiplier}x，"
-                f"估算={device_status}。")
 
 
-class DLSSNRFrameGenerateMedia:
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "media_path": ("STRING", {"default": "", "multiline": False}),
-                "output_path": ("STRING", {"default": "", "multiline": False}),
-                "gpu_device": gpu_input(),
-                "frame_generation_multiplier": ("INT", {"default": 2, "min": 2, "max": 4, "step": 1}),
-                "motion_estimator": (["高速 GPU 梯度光流（视频推荐）", "精细 GPU 迭代光流", "关闭运动估算"],),
-                "motion_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 8.0, "step": 0.05}),
-                "flow_iterations": ("INT", {"default": 12, "min": 1, "max": 50, "step": 1}),
-                "analysis_max_side": ("INT", {"default": 960, "min": 128, "max": 4096, "step": 64}),
-                "encoder": (["NVIDIA NVENC（GPU编码）", "CPU mp4v（CPU编码）"],),
-                "preserve_audio": ("BOOLEAN", {"default": True}),
-                "decoder": (["NVIDIA NVDEC（GPU解码）", "OpenCV（CPU兼容解码）"],),
-            },
-            "optional": {"video": ("VIDEO",), "images": ("IMAGE",)},
-        }
-
-    RETURN_TYPES = ("STRING", "STRING")
-    RETURN_NAMES = ("output_path", "status")
-    FUNCTION = "run"
-    CATEGORY = "image/DLSSNR Live/Frame Generation"
-    OUTPUT_NODE = True
-
-    def run(self, media_path, output_path, gpu_device, frame_generation_multiplier,
-            motion_estimator, motion_strength, flow_iterations, analysis_max_side,
-            encoder, preserve_audio, decoder="NVIDIA NVDEC（GPU解码）",
-            video=None, images=None):
-        source_value = None
-        if video is not None:
-            source_fn = getattr(video, "get_stream_source", None)
-            source_value = source_fn() if callable(source_fn) else None
-        if not source_value and media_path.strip():
-            source_value = media_path.strip().strip('"')
-        if not source_value and images is not None:
-            generated, device_status = _generate_image_batch(
-                images, gpu_device, frame_generation_multiplier, motion_estimator,
-                motion_strength, flow_iterations, analysis_max_side)
-            prefix = (Path(output_path.strip().strip('"')).expanduser().resolve()
-                      if output_path.strip() else _output_directory() / "frame_generated.gif")
-            target = _unique_path(prefix.with_suffix(".gif"))
-            target.parent.mkdir(parents=True, exist_ok=True)
-            frames = [Image.fromarray(np.ascontiguousarray(
-                item.detach().cpu().numpy() * 255.0 + 0.5, dtype=np.uint8), "RGB")
-                for item in generated]
-            frames[0].save(target, save_all=True, append_images=frames[1:],
-                           duration=max(1, int(round(len(images) * 100 / len(generated)))),
-                           loop=0)
-            return (str(target),
-                    f"GIF帧生成完成：{len(images)}→{len(generated)} 帧，"
-                    f"估算={device_status}。")
-        if not source_value:
-            raise RuntimeError("请选择 GIF/视频文件，或接入 VIDEO/IMAGE。")
-        source = Path(source_value).expanduser().resolve()
-        if not source.is_file():
-            raise RuntimeError(f"媒体文件不存在：{source}")
-        if source.suffix.lower() == ".gif":
-            source_frames = []
-            durations = []
-            with Image.open(source) as gif:
-                for frame in ImageSequence.Iterator(gif):
-                    source_frames.append(_tensor_rgb(np.asarray(frame.convert("RGB"))))
-                    durations.append(int(frame.info.get("duration", 100) or 100))
-            generated, device_status = _generate_image_batch(
-                torch.stack(source_frames), gpu_device, frame_generation_multiplier,
-                motion_estimator, motion_strength, flow_iterations, analysis_max_side)
-            requested = (Path(output_path.strip().strip('"')).expanduser().resolve()
-                         if output_path.strip() else _output_directory() / f"{source.stem}_fg.gif")
-            target = _unique_path(requested.with_suffix(".gif"))
-            target.parent.mkdir(parents=True, exist_ok=True)
-            frames = [Image.fromarray(np.ascontiguousarray(
-                item.cpu().numpy() * 255.0 + 0.5, dtype=np.uint8), "RGB") for item in generated]
-            duration = max(1, int(round(float(np.sum(durations)) / len(generated))))
-            frames[0].save(target, save_all=True, append_images=frames[1:],
-                           duration=duration, loop=0)
-            return (str(target),
-                    f"GIF帧生成完成：{len(source_frames)}→{len(generated)} 帧，"
-                    f"估算={device_status}。")
-
-        try:
-            import cv2
-        except ImportError as exc:
-            raise RuntimeError("视频帧生成需要 opencv-python。") from exc
-        capture = cv2.VideoCapture(str(source))
-        if not capture.isOpened():
-            raise RuntimeError(f"无法打开视频：{source}")
-        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = float(capture.get(cv2.CAP_PROP_FPS)) or 30.0
-        requested = (Path(output_path.strip().strip('"')).expanduser().resolve()
-                     if output_path.strip() else _output_directory() / f"{source.stem}_fg.mp4")
-        target = _unique_path(requested.with_suffix(".mp4"))
-        target.parent.mkdir(parents=True, exist_ok=True)
-        video_only = target.with_name(f".{target.stem}.video-only.mp4")
-        selected_gpu = gpu_index(gpu_device)
-        stream_decoder = _StreamDecoder(source, width, height, decoder, selected_gpu)
-        capture.release()
-        writer = None
-        previous = None
-        count = 0
-        output_count = 0
-        last = None
-        device_status = "unused"
-        try:
-            writer = _StreamEncoder(video_only, width, height,
-                                    fps * frame_generation_multiplier,
-                                    encoder, selected_gpu)
-            while True:
-                current = stream_decoder.read()
-                if current is None:
-                    break
-                if previous is not None:
-                    _depth, motion, _mask, _exposure, device_status = estimate_color_guidance(
-                        previous, current, motion_strength, 0.0, flow_iterations,
-                        analysis_max_side, selected_gpu, "关闭深度估算", motion_estimator)
-                    for generated in _generate_between(
-                            previous, current, motion, frame_generation_multiplier, selected_gpu):
-                        writer.write(generated)
-                        output_count += 1
-                writer.write(current)
-                output_count += 1
-                count += 1
-                previous = current
-                last = current
-                _check_interrupt()
-            writer.close()
-            writer = None
-            stream_decoder.close()
-            audio_kept = _mux_audio(_find_ffmpeg(), source, video_only, target, preserve_audio)
-        finally:
-            capture.release()
-            stream_decoder.close()
-            if writer is not None:
-                writer.close()
-        if last is None:
-            raise RuntimeError("媒体中没有可读取的视频帧。")
-        return (str(target),
-                f"视频帧生成完成：输入 {count} 帧，输出 {output_count} 帧，"
-                f"倍率={frame_generation_multiplier}x，估算={device_status}，"
-                f"音频={'保留' if audio_kept else '未复用'}。")
 
 
 class DLSSNRRealtimeStreamVideo:
@@ -1687,6 +1379,13 @@ class DLSSNRRealtimeStreamVideo:
                 "scene_paper_white_scale": ("FLOAT", {"default": 1.0, "min": 0.25, "max": 4.0,
                                                         "step": 0.05, "display": "slider"}),
                 "ui_correction": ("BOOLEAN", {"default": False}),
+                "frame_guidance": (["1 零引导极速", "0 GPU深度和运动", "2 仅GPU运动", "3 仅GPU深度"],),
+                "motion_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 8.0, "step": 0.05, "display": "slider"}),
+                "depth_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05, "display": "slider"}),
+                "depth_convention": ("STRING", {"default": "1 反向深度（Inverted）"}),
+                "motion_scale_x": ("FLOAT", {"default": 1.0, "min": -4.0, "max": 4.0, "step": 0.05, "display": "slider"}),
+                "motion_scale_y": ("FLOAT", {"default": 1.0, "min": -4.0, "max": 4.0, "step": 0.05, "display": "slider"}),
+                "color_fix": ("BOOLEAN", {"default": False, "tooltip": "仅开启时使用稳定的源色调匹配；关闭时只修正通道顺序。"}),
             },
             "optional": {"video": ("VIDEO",)},
             "hidden": {"unique_id": "UNIQUE_ID"},
@@ -1706,6 +1405,9 @@ class DLSSNRRealtimeStreamVideo:
             preserve_audio, automatic_mask, nr_style, nr_intensity,
             local_tone_strength, local_structure_strength,
             skin_structure_strength, scene_paper_white_scale, ui_correction,
+            frame_guidance="1 零引导极速", motion_strength=1.0, depth_strength=1.0,
+            depth_convention="1 反向深度（Inverted）", motion_scale_x=1.0,
+            motion_scale_y=1.0, color_fix=False,
             unique_id=None, video=None, speed_multiplier=0.0):
         source_value = None
         if video is not None:
@@ -1746,6 +1448,8 @@ class DLSSNRRealtimeStreamVideo:
         if width <= 0 or height <= 0:
             raise RuntimeError("无法读取视频分辨率。")
         fps = fps if fps > 0.01 else 30.0
+        fps_num, fps_den = _exact_video_rate(source, fps)
+        fps = fps_num / fps_den
 
         requested = (Path(str(output_path).strip().strip('"')).expanduser().resolve()
                      if str(output_path).strip() else
@@ -1773,6 +1477,11 @@ class DLSSNRRealtimeStreamVideo:
             "1" if automatic_mask else "0", "1" if ui_correction else "0",
             f"{float(scene_paper_white_scale):.6f}", str(preview_file), str(stop_file),
             f"{max(0.0, float(speed_multiplier)):.6f}",
+            str(_guidance(frame_guidance)), f"{float(motion_strength):.6f}",
+            f"{float(depth_strength):.6f}", "1" if color_fix else "0",
+            str(int(str(depth_convention).split()[0])),
+            f"{float(motion_scale_x):.6f}", f"{float(motion_scale_y):.6f}",
+            str(fps_num), str(fps_den),
         ]
         event = _event_for(str(unique_id))
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -1847,7 +1556,8 @@ class DLSSNRRealtimeStreamVideo:
                     f"原生视频流式处理失败（代码 {code}）：{stderr[-2000:]}")
             if not video_only.is_file() or video_only.stat().st_size == 0:
                 raise RuntimeError("原生视频流式处理没有生成有效视频。")
-            audio_kept = _mux_audio(ffmpeg, source, video_only, requested, preserve_audio)
+            audio_kept = _mux_audio(
+                ffmpeg, source, video_only, requested, preserve_audio)
             elapsed = time.perf_counter() - started
             if preview_file.is_file():
                 try:
@@ -1866,6 +1576,7 @@ class DLSSNRRealtimeStreamVideo:
             stopped = "（手动停止）" if event.is_set() else ""
             status = (f"完成{stopped}：{frames}{suffix} 帧，{elapsed:.2f}s，"
                       f"原生常驻 DLSSNR={measured_fps:.2f} FPS，"
+                      f"源/输出帧率={fps_num}/{fps_den} ({fps:.6f})，"
                       f"GPU={selected_gpu}，后端={backend}，"
                       f"音频={'保留' if audio_kept else '未复用'}，"
                       f"DLL SHA256={runtime_hash}")
@@ -1894,14 +1605,8 @@ NODE_CLASS_MAPPINGS = {
     "DLSSNRLoadGIF": DLSSNRLoadGIF,
     "DLSSNRProcessGIF": DLSSNRProcessGIF,
     "DLSSNRSaveGIF": DLSSNRSaveGIF,
-    "DLSSNRNativeVideo": DLSSNRNativeVideo,
-    "DLSSNRFastVideo": DLSSNRFastVideo,
-    "DLSSNRFastVideoLegacy": DLSSNRFastVideoLegacy,
-    "DLSSNRStreamVideo": DLSSNRStreamVideo,
+    "DLSSNRFastVideo": DLSSNRFastVideoNativeV16,
     "DLSSNRFrameGenerateImages": DLSSNRFrameGenerateImages,
-    "DLSSNRFrameGenerateVideo": DLSSNRFrameGenerateVideo,
-    "DLSSNRFrameGenerateMedia": DLSSNRFrameGenerateMedia,
-    "DLSSNRRealtimeStreamVideo": DLSSNRRealtimeStreamVideo,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1912,12 +1617,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "DLSSNRLoadGIF": "DLSSNR 加载 GIF",
     "DLSSNRProcessGIF": "DLSSNR GIF 处理",
     "DLSSNRSaveGIF": "DLSSNR 保存 GIF",
-    "DLSSNRNativeVideo": "DLSSNR 原生视频处理（VIDEO→VIDEO）",
     "DLSSNRFastVideo": "DLSSNR GPU高速视频处理",
-    "DLSSNRFastVideoLegacy": "DLSSNR GPU高速视频处理（旧版）",
-    "DLSSNRStreamVideo": "DLSSNR 流式视频处理（低内存）",
     "DLSSNRFrameGenerateImages": "GPU帧生成（GIF/图像帧）",
-    "DLSSNRFrameGenerateVideo": "GPU帧生成（VIDEO→VIDEO）",
-    "DLSSNRFrameGenerateMedia": "GPU帧生成（GIF/各类视频）",
-    "DLSSNRRealtimeStreamVideo": "视频流式处理",
 }

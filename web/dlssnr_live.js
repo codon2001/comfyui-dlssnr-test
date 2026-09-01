@@ -28,6 +28,7 @@ const ZH_LABELS = {
     local_tone_strength: "局部色调强度", local_structure_strength: "局部结构强度",
     skin_structure_strength: "皮肤结构强度", ui_correction: "UI修正",
     scene_paper_white_scale: "场景纸白亮度",
+    color_fix: "色彩修复",
     frame_guidance: "帧引导方式", depth_convention: "深度方向",
     motion_scale_x: "运动向量X缩放", motion_scale_y: "运动向量Y缩放",
     depth_inference_interval: "深度推理间隔", estimate_missing_from_color: "从颜色估算缺失引导",
@@ -42,7 +43,8 @@ const ZH_LABELS = {
     enable_frame_generation: "启用GPU帧生成",
     frame_generation_multiplier: "帧生成倍率",
     generated_images: "帧生成图像",
-    preview_fps: "预览帧率", safety_timeout_seconds: "安全超时（秒）",
+    preview_fps: "预览帧率", preview_max_side: "预览最长边",
+    preview_jpeg_quality: "预览 JPEG 质量", safety_timeout_seconds: "安全超时（秒）",
     frame_storage: "帧缓存位置", max_frames: "最大帧数", strength: "强度",
     depth: "深度图", estimated_depth: "估算深度", motion_vectors: "运动向量",
     reactive_mask: "反应遮罩", exposure_ratio: "曝光比例", estimator_device: "估算设备",
@@ -53,8 +55,9 @@ const HOT_WIDGET_NAMES = new Set([
     "automatic_mask", "nr_style", "nr_intensity", "local_tone_strength",
     "local_structure_strength", "skin_structure_strength", "ui_correction",
     "frame_guidance", "depth_convention", "motion_scale_x", "motion_scale_y",
-    "depth_inference_interval", "preview_fps", "safety_timeout_seconds",
-    "scene_paper_white_scale",
+    "depth_inference_interval", "preview_fps", "preview_max_side",
+    "preview_jpeg_quality", "safety_timeout_seconds",
+    "scene_paper_white_scale", "color_fix",
     "depth_assist_strength",
 ]);
 
@@ -175,15 +178,29 @@ function uploadMedia(node, widgetName, kind) {
     input.onchange = async () => {
         const file = input.files?.[0];
         if (!file) return;
-        const data = new FormData();
-        data.append("file", file, file.name);
         try {
-            const response = await api.fetchApi(`/dlssnr_live/upload_media?kind=${kind}`, {
-                method: "POST",
-                body: data,
-            });
-            const result = await response.json();
-            if (!response.ok || result?.error) throw new Error(result?.error || "上传失败");
+            // Keep every HTTP request below ComfyUI/aiohttp's common 100 MB
+            // request limit. The server appends these chunks directly to disk.
+            const chunkSize = 32 * 1024 * 1024;
+            const chunks = Math.max(1, Math.ceil(file.size / chunkSize));
+            const uploadId = globalThis.crypto?.randomUUID?.()
+                || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            let result = null;
+            for (let index = 0; index < chunks; index++) {
+                const data = new FormData();
+                data.append("file", file.slice(index * chunkSize,
+                    Math.min(file.size, (index + 1) * chunkSize)), file.name);
+                const query = new URLSearchParams({
+                    kind, upload_id: uploadId, chunk: String(index), chunks: String(chunks),
+                });
+                const response = await api.fetchApi(`/dlssnr_live/upload_media?${query}`, {
+                    method: "POST", body: data,
+                });
+                result = await response.json();
+                if (!response.ok || result?.error)
+                    throw new Error(result?.error || `上传分片 ${index + 1}/${chunks} 失败`);
+            }
+            if (!result?.complete || !result?.path) throw new Error("上传没有正常完成");
             const widget = node.widgets?.find((item) => item.name === widgetName);
             if (widget) widget.value = result.path;
         } catch (error) {
@@ -219,8 +236,7 @@ function ensureButton(node, label, callback) {
 }
 
 function ensureNodeControls(node, nodeName, previewNodes) {
-    if (["DLSSNRLive", "DLSSNRStreamVideo", "DLSSNRFastVideo", "DLSSNRFastVideoLegacy",
-         "DLSSNRRealtimeStreamVideo"].includes(nodeName)) {
+    if (["DLSSNRLive", "DLSSNRFastVideo"].includes(nodeName)) {
         ensureButton(node, "▶ 开始运行", async () => {
             await app.queuePrompt(0, 1);
         });
@@ -232,8 +248,7 @@ function ensureNodeControls(node, nodeName, previewNodes) {
             });
         });
     }
-    if (["DLSSNRStreamVideo", "DLSSNRFastVideo", "DLSSNRFastVideoLegacy",
-         "DLSSNRRealtimeStreamVideo"].includes(nodeName)) {
+    if (nodeName === "DLSSNRFastVideo") {
         ensureButton(node, "选择输入视频", async () => {
             uploadMedia(node, "video_path", "video");
         });
@@ -266,18 +281,39 @@ function scheduleControlRepair(node, nodeName, previewNodes) {
     setTimeout(repair, 750);
 }
 
-api.addEventListener("dlssnr_live_preview", (event) => {
-    const data = event.detail;
+const pendingPreviews = new Map();
+const decodingPreviews = new Set();
+
+function decodeNewestPreview(nodeId) {
+    if (decodingPreviews.has(nodeId)) return;
+    const data = pendingPreviews.get(nodeId);
+    if (!data) return;
+    pendingPreviews.delete(nodeId);
     const node = findNode(data?.node_id);
     if (!node) return;
+    decodingPreviews.add(nodeId);
     const image = new Image();
     image.onload = () => {
         node._dlssnrStatus = `${data.state === "stopped" ? "已停止" : "运行中"} · ` +
             `${data.iteration} 次 · ${Number(data.fps || 0).toFixed(1)} FPS · ` +
             `SHA ${String(data.dll_sha256 || "").slice(0, 12)}`;
         showLocalPreview(node, image);
+        decodingPreviews.delete(nodeId);
+        decodeNewestPreview(nodeId);
+    };
+    image.onerror = () => {
+        decodingPreviews.delete(nodeId);
+        decodeNewestPreview(nodeId);
     };
     image.src = `data:image/jpeg;base64,${data.image}`;
+}
+
+api.addEventListener("dlssnr_live_preview", (event) => {
+    const data = event.detail;
+    const nodeId = String(data?.node_id ?? "");
+    if (!nodeId) return;
+    pendingPreviews.set(nodeId, data);
+    decodeNewestPreview(nodeId);
 });
 
 app.registerExtension({
@@ -285,13 +321,11 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData) {
         const supported = new Set([
             "DLSSNRLive", "DLSSNRImageDirect", "DLSSNRImageDirectLegacy", "DLSSNRProcessGIF",
-            "DLSSNRStreamVideo", "DLSSNRFastVideo", "DLSSNRFastVideoLegacy", "DLSSNRNativeVideo", "DLSSNRLoadGIF",
-            "DLSSNRFrameGenerateMedia", "DLSSNRRealtimeStreamVideo",
+            "DLSSNRFastVideo", "DLSSNRLoadGIF",
         ]);
         const previewNodes = new Set([
             "DLSSNRLive", "DLSSNRImageDirect", "DLSSNRImageDirectLegacy", "DLSSNRProcessGIF",
-            "DLSSNRStreamVideo", "DLSSNRFastVideo", "DLSSNRFastVideoLegacy", "DLSSNRNativeVideo",
-            "DLSSNRRealtimeStreamVideo",
+            "DLSSNRFastVideo",
         ]);
         if (!String(nodeData.name || "").startsWith("DLSSNR")) return;
         const hasExtraControls = supported.has(nodeData.name);
