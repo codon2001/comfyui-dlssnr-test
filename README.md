@@ -25,10 +25,9 @@ IMAGE ─→ 图像运算
           ├─ motion_preview  ─→ Preview Image / Save Image
           ├─ edge_image      ─→ Preview Image / Save Image
           └─ edge_mask       ─→ 其他 MASK 节点
-```
 
 其他连线请查看示例工作流
-```
+
 
 ## 参数
 
