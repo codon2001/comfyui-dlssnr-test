@@ -12,11 +12,12 @@
 - `DLSSNR 实时预览 / 手动停止`：持续处理单图，节点下方显示高清对比图；“全屏查看预览”可放大检查细节。
 - `DLSSNR 图像直接输出`：一次运行后直接输出处理图、对比图和状态。
 - `图像运算`：从 RGB 输出深度 IMAGE、运动向量、反应 MASK、曝光、法线 IMAGE、运动预览 IMAGE、描边 IMAGE 与描边 MASK。
+- `DLSSNR GPU高速视频处理`：视频处理节点。
 - GIF 加载/处理/保存：保持动画时长，可选择颜色深度、运动估算和 2–4 倍 GPU 光流补帧。
 
 ## 推荐接线
 
-```text
+
 IMAGE ─→ 图像运算
           ├─ estimated_depth ─→ 任一 DLSSNR 节点 depth / Preview Image
           ├─ motion_vectors  ─→ 任一 DLSSNR 节点 motion_vectors
